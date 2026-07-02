@@ -31,7 +31,8 @@ function nowLabel() {
 }
 
 function extractAiText(response: Record<string, unknown>): string {
-  const message = response.message ?? response.response ?? response.reply;
+  const message = response.assistantMessage;
+  console.log('AI Response:', response);
   return typeof message === 'string' && message.trim().length > 0
     ? message
     : 'Entendi! Me conta mais sobre isso 💭';

@@ -1,98 +1,123 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { apiClient, ApiError } from '@/api/api-client';
+import { ChunkyButton } from '@/components/chunky-button';
+import { useUserContext } from '@/context/user-context';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+const WELCOME_VARIATIONS = [
+  'Olha so quem esta de volta!',
+  'Bem vindo de volta!',
+  'Que bom te ver por aqui!',
+  'Partiu achar presentes incriveis hoje?',
+  'Sua MigoBox estava com saudade!',
+];
 
 export default function HomeScreen() {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [friendlyError, setFriendlyError] = useState<string | null>(null);
+  const { setUser, setWelcomeMessage } = useUserContext();
+
+  const handleSignIn = async () => {
+    const normalizedEmail = email.trim();
+
+    if (!normalizedEmail) {
+      setFriendlyError('Digite um e-mail para entrar.');
+      return;
+    }
+
+    setFriendlyError(null);
+    setLoading(true);
+
+    try {
+      const user = await apiClient.findUserByEmail(normalizedEmail);
+
+      if (!user.userID) {
+        setFriendlyError('Nao encontramos o identificador da sua conta.');
+        return;
+      }
+
+      const randomIndex = Math.floor(Math.random() * WELCOME_VARIATIONS.length);
+      setWelcomeMessage(WELCOME_VARIATIONS[randomIndex]);
+      setUser(user);
+      router.replace('/home' as never);
+    } catch (error) {
+      const apiError = error as ApiError;
+      if (apiError.status === 404) {
+        setFriendlyError('E-mail nao encontrado. Confira e tente novamente.');
+      } else {
+        setFriendlyError('Nao conseguimos entrar agora. Tente de novo em instantes.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <ThemedView style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+        <View style={styles.content}>
+          <Text style={styles.brand}>MigoBox</Text>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Digite seu e-mail"
+            placeholderTextColor="#95A5A6"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={styles.input}
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
 
-        {Platform.OS === 'web' && <WebBadge />}
+          {friendlyError ? <Text style={styles.error}>{friendlyError}</Text> : null}
+
+          <ChunkyButton label="Entrar" onPress={handleSignIn} loading={loading} />
+        </View>
       </SafeAreaView>
-    </ThemedView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
   },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    paddingHorizontal: 24,
   },
-  title: {
+  content: {
+    gap: 16,
+  },
+  brand: {
+    fontSize: 42,
+    fontFamily: 'Nunito_900Black',
     textAlign: 'center',
+    color: '#2D3436',
+    marginBottom: 16,
   },
-  code: {
-    textTransform: 'uppercase',
+  input: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: '#E9EDF2',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontFamily: 'Nunito_400Regular',
+    color: '#2D3436',
+    backgroundColor: '#FFFFFF',
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  error: {
+    color: '#D64545',
+    fontSize: 14,
+    fontFamily: 'Nunito_700Bold',
+    textAlign: 'center',
   },
 });

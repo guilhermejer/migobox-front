@@ -33,6 +33,12 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O app precisa acessar suas fotos para enviar a imagem de perfil do amigo."
+        }
       ]
     ],
     "experiments": {

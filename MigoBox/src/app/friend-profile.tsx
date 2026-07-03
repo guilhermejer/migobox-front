@@ -35,9 +35,9 @@ function calcAge(birthDate?: string): string | null {
 }
 
 function tagColor(type: TagItem['type']) {
-  if (type === 'like') return '#58CC02';
-  if (type === 'dislike') return '#F43F5E';
-  return '#A855F7';
+  if (type === 'like') return '#065F46';
+  if (type === 'dislike') return '#9F1239';
+  return '#3730A3';
 }
 
 export default function FriendProfileScreen() {
@@ -118,6 +118,11 @@ export default function FriendProfileScreen() {
   }, [profile]);
 
   const filteredTags = activeFilter === 'all' ? allTags : allTags.filter((tag) => tag.type === activeFilter);
+
+  const sortedFilteredTags = useMemo(
+    () => [...filteredTags].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' })),
+    [filteredTags],
+  );
 
   const goToChat = () => {
     if (!friendId) return;
@@ -280,13 +285,11 @@ export default function FriendProfileScreen() {
               ) : (
                 <Text style={styles.avatarEmoji}>{avatar}</Text>
               )}
-              <View style={styles.avatarEditBadge}>
+              {/* <View style={styles.avatarEditBadge}>
                 {photoBusy ? (
-                  <ActivityIndicator color="#1CB0F6" size="small" />
-                ) : (
-                  <Ionicons name="camera" size={14} color="#1CB0F6" />
-                )}
-              </View>
+                  <ActivityIndicator color="#1eb1f6" size="small" />
+                ) : null}
+              </View> */}
             </TouchableOpacity>
 
             <Text style={styles.heroName}>{friend?.name ?? params.friendName ?? 'Migo'}</Text>
@@ -327,18 +330,22 @@ export default function FriendProfileScreen() {
             })}
           </View>
 
-          {filteredTags.length > 0 ? (
-            <View style={styles.tagsWrap}>
-              {filteredTags.map((tag, index) => (
-                <View
-                  key={`${tag.type}-${tag.label}-${index}`}
-                  style={[
-                    styles.tagPill,
-                    { backgroundColor: tagColor(tag.type) + '1A', borderColor: tagColor(tag.type) },
-                  ]}>
-                  <Text style={[styles.tagPillText, { color: tagColor(tag.type) }]}>{tag.label}</Text>
+          {sortedFilteredTags.length > 0 ? (
+            <View style={styles.tagsViewport}>
+              <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                <View style={styles.tagsWrap}>
+                  {sortedFilteredTags.map((tag, index) => (
+                    <View
+                      key={`${tag.type}-${tag.label}-${index}`}
+                      style={[
+                        styles.tagPill,
+                        { backgroundColor: tagColor(tag.type) + '1A', borderColor: tagColor(tag.type) },
+                      ]}>
+                      <Text style={[styles.tagPillText, { color: tagColor(tag.type) }]}>{tag.label}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
+              </ScrollView>
             </View>
           ) : (
             <View style={styles.emptyPersonality}>
@@ -415,11 +422,11 @@ export default function FriendProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#E0F2FE',
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#E0F2FE',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
@@ -557,6 +564,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  tagsViewport: {
+    maxHeight: 180,
   },
   tagPill: {
     paddingHorizontal: 14,

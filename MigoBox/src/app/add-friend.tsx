@@ -1,7 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import {
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,10 +17,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { apiClient, ApiError, FriendUpsertRequest } from '@/api/api-client';
+import { apiClient, ApiError, FriendUpsertRequest, ProfilePhotoSignedUrlRequest } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
 import { useUserContext } from '@/context/user-context';
 import { domain } from '@/types/domain';
+
+type ProfileMode = 'photo' | 'emoji';
+
+type SelectedPhoto = {
+  uri: string;
+  mimeType: 'image/jpeg' | 'image/png';
+};
 
 const AVATAR_OPTIONS = [
   '🌸', '🎸', '✨', '🏀', '🎨', '🎮', '🌻', '🎯',
@@ -65,7 +76,9 @@ export default function AddFriendScreen() {
   const { user } = useUserContext();
 
   const [step, setStep] = useState<1 | 2>(1);
+  const [profileMode, setProfileMode] = useState<ProfileMode>('emoji');
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
+  const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
   const [name, setName] = useState('');
   const [relation, setRelation] = useState('');
   const [customRelation, setCustomRelation] = useState('');
@@ -76,7 +89,58 @@ export default function AddFriendScreen() {
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
 
   const effectiveRelation = relation === 'Outro' ? customRelation.trim() : relation;
-  const canProceedStep1 = name.trim().length >= 2 && effectiveRelation.length > 0;
+  const hasProfileChoice = profileMode === 'emoji' || selectedPhoto !== null;
+  const canProceedStep1 = name.trim().length >= 2 && effectiveRelation.length > 0 && hasProfileChoice;
+
+  const pickPhotoMimeType = (asset: ImagePicker.ImagePickerAsset): 'image/jpeg' | 'image/png' => {
+    if (asset.mimeType === 'image/png' || asset.fileName?.toLowerCase().endsWith('.png')) {
+      return 'image/png';
+    }
+    return 'image/jpeg';
+  };
+
+  const handlePickProfilePhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setFriendlyError('Precisamos de permissao para acessar sua galeria.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    setFriendlyError(null);
+    setSelectedPhoto({
+      uri: asset.uri,
+      mimeType: pickPhotoMimeType(asset),
+    });
+  };
+
+  const uploadFriendProfilePhoto = async (friendId: string, photo: SelectedPhoto) => {
+    const body: ProfilePhotoSignedUrlRequest = { contentType: photo.mimeType };
+    const signedUrl = await apiClient.requestFriendProfilePhotoUploadUrl(friendId, body);
+
+    if (signedUrl.method !== 'PUT') {
+      throw new Error(`Metodo inesperado para upload: ${signedUrl.method}`);
+    }
+
+    const uploadResult = await FileSystem.uploadAsync(signedUrl.url, photo.uri, {
+      httpMethod: 'PUT',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': photo.mimeType },
+    });
+
+    if (uploadResult.status < 200 || uploadResult.status >= 300) {
+      throw new Error('Falha ao enviar a foto de perfil.');
+    }
+  };
 
   const handleBack = () => {
     if (step === 2) {
@@ -105,13 +169,24 @@ export default function AddFriendScreen() {
       const payload: FriendUpsertRequest = {
         name: name.trim(),
         userRelation: effectiveRelation || undefined,
-        avatar,
+        avatar: profileMode === 'emoji' ? avatar : undefined,
         city: city.trim() || undefined,
         birthDate: parseBirthDateToIso(birthDateText),
         gender: gender || undefined,
       };
 
       const friend = await apiClient.createFriend(user.userID, payload);
+
+      if (profileMode === 'photo' && selectedPhoto && friend.friendID) {
+        try {
+          await uploadFriendProfilePhoto(friend.friendID, selectedPhoto);
+        } catch (photoError) {
+          const message = photoError instanceof Error
+            ? photoError.message
+            : 'Migo criado, mas nao foi possivel enviar a foto.';
+          Alert.alert('Foto nao enviada', message);
+        }
+      }
 
       router.replace({
         pathname: '/chat-builder',
@@ -156,21 +231,77 @@ export default function AddFriendScreen() {
           {step === 1 ? (
             <>
               <View style={styles.card}>
-                <Text style={styles.label}>Escolha um emoji para o Migo</Text>
-                <View style={styles.avatarGrid}>
-                  {AVATAR_OPTIONS.map((option) => {
-                    const selected = option === avatar;
-                    return (
-                      <TouchableOpacity
-                        key={option}
-                        style={[styles.avatarOption, selected && styles.avatarOptionSelected]}
-                        onPress={() => setAvatar(option)}
-                        activeOpacity={0.8}>
-                        <Text style={styles.avatarOptionEmoji}>{option}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <Text style={styles.label}>Foto de perfil ou avatar</Text>
+                <View style={styles.modeRow}>
+                  <TouchableOpacity
+                    style={[styles.modeOption, profileMode === 'photo' && styles.modeOptionSelected]}
+                    onPress={() => setProfileMode('photo')}
+                    activeOpacity={0.8}>
+                    <Text style={styles.modeEmoji}>📷</Text>
+                    <Text style={[styles.modeText, profileMode === 'photo' && styles.modeTextSelected]}>
+                      Foto
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modeOption, profileMode === 'emoji' && styles.modeOptionSelected]}
+                    onPress={() => setProfileMode('emoji')}
+                    activeOpacity={0.8}>
+                    <Text style={styles.modeEmoji}>😄</Text>
+                    <Text style={[styles.modeText, profileMode === 'emoji' && styles.modeTextSelected]}>
+                      Avatar
+                    </Text>
+                  </TouchableOpacity>
                 </View>
+
+                {profileMode === 'photo' ? (
+                  <View style={styles.photoPickerCard}>
+                    <View style={styles.photoPreview}>
+                      {selectedPhoto ? (
+                        <Image source={{ uri: selectedPhoto.uri }} style={styles.photoImage} />
+                      ) : (
+                        <Text style={styles.photoPlaceholder}>📸</Text>
+                      )}
+                    </View>
+
+                    <View style={styles.photoActionsRow}>
+                      <TouchableOpacity
+                        style={styles.photoActionButton}
+                        onPress={() => void handlePickProfilePhoto()}
+                        activeOpacity={0.8}>
+                        <Text style={styles.photoActionText}>
+                          {selectedPhoto ? 'Trocar foto' : 'Adicionar foto'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {selectedPhoto ? (
+                        <TouchableOpacity
+                          style={[styles.photoActionButton, styles.photoActionButtonGhost]}
+                          onPress={() => setSelectedPhoto(null)}
+                          activeOpacity={0.8}>
+                          <Text style={[styles.photoActionText, styles.photoActionTextGhost]}>
+                            Remover
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.avatarGrid}>
+                    {AVATAR_OPTIONS.map((option) => {
+                      const selected = option === avatar;
+                      return (
+                        <TouchableOpacity
+                          key={option}
+                          style={[styles.avatarOption, selected && styles.avatarOptionSelected]}
+                          onPress={() => setAvatar(option)}
+                          activeOpacity={0.8}>
+                          <Text style={styles.avatarOptionEmoji}>{option}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
 
               <View style={styles.card}>
@@ -217,7 +348,11 @@ export default function AddFriendScreen() {
             <>
               <View style={styles.previewCard}>
                 <View style={styles.previewAvatar}>
-                  <Text style={styles.previewAvatarEmoji}>{avatar}</Text>
+                  {profileMode === 'photo' && selectedPhoto ? (
+                    <Image source={{ uri: selectedPhoto.uri }} style={styles.previewPhotoImage} />
+                  ) : (
+                    <Text style={styles.previewAvatarEmoji}>{avatar}</Text>
+                  )}
                 </View>
                 <Text style={styles.previewName}>{name.trim() || 'Seu novo Migo'}</Text>
                 <Text style={styles.previewRelation}>{effectiveRelation || 'Relacao nao definida'}</Text>
@@ -370,6 +505,92 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'Nunito_800ExtraBold',
   },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modeOption: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    backgroundColor: '#F8F9FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modeOptionSelected: {
+    borderColor: '#1CB0F6',
+    backgroundColor: '#E7F7FF',
+  },
+  modeEmoji: {
+    fontSize: 18,
+  },
+  modeText: {
+    color: '#717182',
+    fontSize: 14,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  modeTextSelected: {
+    color: '#1CB0F6',
+  },
+  photoPickerCard: {
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    gap: 10,
+  },
+  photoPreview: {
+    alignSelf: 'center',
+    width: 98,
+    height: 98,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoPlaceholder: {
+    fontSize: 34,
+  },
+  photoActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  photoActionButton: {
+    borderRadius: 14,
+    backgroundColor: '#1CB0F6',
+    borderBottomWidth: 4,
+    borderBottomColor: '#0F8FC4',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  photoActionButtonGhost: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    borderBottomWidth: 4,
+    borderBottomColor: '#D8E0E8',
+  },
+  photoActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  photoActionTextGhost: {
+    color: '#2D3436',
+  },
   avatarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -455,6 +676,10 @@ const styles = StyleSheet.create({
   },
   previewAvatarEmoji: {
     fontSize: 36,
+  },
+  previewPhotoImage: {
+    width: '100%',
+    height: '100%',
   },
   previewName: {
     color: '#2D3436',

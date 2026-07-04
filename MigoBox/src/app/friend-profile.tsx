@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiClient, ApiError, DEFAULT_PROFILE_PHOTO_CONTENT_TYPE, ProfilePhotoSignedUrlRequest } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
+import { ConfirmDeleteModal } from '@/components/confirm-delete-modal';
 import { ProfileHintBubble } from '@/components/profile-hint-bubble';
 import { ReminderFormModal } from '@/components/reminder-form-modal';
 import { useUserContext } from '@/context/user-context';
@@ -93,6 +94,10 @@ export default function FriendProfileScreen() {
   const [reminders, setReminders] = useState<domain.Reminder[]>([]);
   const [reminderFormVisible, setReminderFormVisible] = useState(false);
   const [editingReminder, setEditingReminder] = useState<domain.Reminder | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<
+    { kind: 'reminder' | 'gift'; id: string; label: string } | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
@@ -359,6 +364,45 @@ export default function FriendProfileScreen() {
     setEditingReminder(null);
   };
 
+  const askDeleteReminder = (reminder: domain.Reminder) => {
+    if (!reminder.reminderID) return;
+    const meta = occasionMeta(reminder.type);
+    setDeleteTarget({ kind: 'reminder', id: reminder.reminderID, label: meta.label });
+  };
+
+  const askDeleteGift = (gift: domain.Gift) => {
+    if (!gift.giftID) return;
+    setDeleteTarget({ kind: 'gift', id: gift.giftID, label: gift.title ?? 'sugestão' });
+  };
+
+  const cancelDelete = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+
+    setDeleting(true);
+    setFriendlyError(null);
+
+    try {
+      if (deleteTarget.kind === 'reminder') {
+        await apiClient.deleteReminder(deleteTarget.id);
+        setReminders((prev) => prev.filter((reminder) => reminder.reminderID !== deleteTarget.id));
+      } else {
+        await apiClient.deleteGift(deleteTarget.id);
+        setGifts((prev) => prev.filter((gift) => gift.giftID !== deleteTarget.id));
+      }
+      setDeleteTarget(null);
+    } catch (error) {
+      const apiError = error as ApiError;
+      setFriendlyError(apiError.message ?? 'Não foi possível deletar agora.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading && !friend) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -524,6 +568,13 @@ export default function FriendProfileScreen() {
                     style={styles.reminderCard}
                     activeOpacity={0.85}
                     onPress={() => openEditReminder(reminder)}>
+                      <View style={styles.cardDeleteButtonShadow} />
+                      <TouchableOpacity
+                        style={styles.cardDeleteButton}
+                        onPress={() => askDeleteReminder(reminder)}
+                        activeOpacity={0.8}>
+                        <Ionicons name="close-outline" size={16} color="#ffffff" />
+                      </TouchableOpacity>
                     <View
                       style={[
                         styles.reminderIcon,
@@ -591,6 +642,13 @@ export default function FriendProfileScreen() {
             ) : (
               gifts.map((gift, index) => (
                 <View key={gift.giftID ?? index} style={styles.giftCard}>
+                  <View style={styles.cardDeleteButtonShadow} />
+                  <TouchableOpacity
+                    style={styles.cardDeleteButton}
+                    onPress={() => askDeleteGift(gift)}
+                    activeOpacity={0.8}>
+                    <Ionicons name="close-outline" size={16} color="#ffffff" />
+                  </TouchableOpacity>
                   <View
                     style={[styles.giftIcon, { backgroundColor: TAG_COLORS[index % TAG_COLORS.length] + '22' }]}>
                     <Text style={styles.giftIconEmoji}>🎁</Text>
@@ -636,6 +694,19 @@ export default function FriendProfileScreen() {
           onSaved={onReminderSaved}
         />
       ) : null}
+
+      <ConfirmDeleteModal
+        visible={deleteTarget !== null}
+        title={deleteTarget?.kind === 'gift' ? 'Deletar sugestão?' : 'Deletar lembrete?'}
+        message={
+          deleteTarget
+            ? `Tem certeza que quer deletar "${deleteTarget.label}"? Essa ação não pode ser desfeita.`
+            : ''
+        }
+        loading={deleting}
+        onConfirm={() => void confirmDelete()}
+        onCancel={cancelDelete}
+      />
     </View>
   );
 }
@@ -889,6 +960,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#D8E0E8',
     padding: 14,
     gap: 12,
+    position: 'relative',
+    paddingRight: 44,
   },
   giftIcon: {
     width: 44,
@@ -979,6 +1052,34 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
     alignItems: 'center',
+    position: 'relative',
+    paddingRight: 44,
+  },
+  cardDeleteButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 25,
+    height: 25,
+    borderRadius: 10,
+    backgroundColor: '#f84e4e',
+    borderWidth: 1,
+    borderColor: '#c02727',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    borderBottomWidth: 4,
+    borderBottomColor: '#c02727',
+  },
+  cardDeleteButtonShadow: {
+    position: 'absolute',
+    top: 12,
+    right: 8,
+    width: 25,
+    height: 25,
+    borderRadius: 10,
+    backgroundColor: '#E8E8E8',
+    zIndex: 1,
   },
   reminderIcon: {
     width: 44,

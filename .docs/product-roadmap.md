@@ -78,8 +78,8 @@ Público-alvo: jovens de 15 a 35 anos. Tom: lúdico e acolhedor.
 | Swagger — enum `domain.ReminderRecurrence` + campo em `domain.Reminder` / `http.ReminderUpsertRequest` | ✅ Done (`.docs/swagger.yaml`) |
 | Backend — modelo/entidade `Reminder` com coluna `recurrence` | ✅ Done |
 | Backend — validação de `recurrence` no handler | ✅ Done |
-| Backend — cálculo de próximas ocorrências (expansão de recorrência) | ❌ Pending |
-| Backend — migração de schema | ❌ Pending |
+| Backend — cálculo de próximas ocorrências (expansão de recorrência) | ✅ Done|
+| Backend — migração de schema | ✅ Done|
 | Backend — endpoint DELETE `/reminders/{reminderId}` | ❌ Pending (não está no swagger) |
 
 > Nota: o backend em Go ignora campos desconhecidos por padrão (`json.Unmarshal`), então criar lembretes **pontuais** (`recurrence: "none"` ou omitido) já funciona hoje. O campo `recurrence` só passa a ser persistido/validado após a adaptação abaixo.

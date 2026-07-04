@@ -284,6 +284,12 @@ export const apiClient = {
     });
   },
 
+  deleteReminder(reminderId: string) {
+    return requestJson<domain.Reminder>(`/reminders/${reminderId}`, {
+      method: 'DELETE',
+    });
+  },
+
   createFriend(userId: string, body: FriendUpsertRequest) {
     return requestJson<domain.Friend>(`/users/${userId}/friends`, {
       method: 'PUT',
@@ -308,6 +314,12 @@ export const apiClient = {
 
   listGiftsByFriendId(friendId: string) {
     return requestJson<domain.Gift[]>(`/friends/${friendId}/gifts`);
+  },
+
+  deleteGift(giftId: string) {
+    return requestJson<domain.Gift>(`/gifts/${giftId}`, {
+      method: 'DELETE',
+    });
   },
 
   createSuggestions(friendId: string, body: SuggestionCreateRequest) {

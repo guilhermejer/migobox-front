@@ -41,21 +41,6 @@ definitions:
     - GenderMale
     - GenderFemale
     - GenderOther
-  domain.ReminderRecurrence:
-    description: Cadencia de repeticao do lembrete. "none" indica evento pontual.
-    enum:
-    - none
-    - yearly
-    - monthly
-    - weekly
-    - daily
-    type: string
-    x-enum-varnames:
-    - ReminderRecurrenceNone
-    - ReminderRecurrenceYearly
-    - ReminderRecurrenceMonthly
-    - ReminderRecurrenceWeekly
-    - ReminderRecurrenceDaily
   domain.Gift:
     properties:
       description:
@@ -106,27 +91,42 @@ definitions:
       message:
         example: Comprar presente ate uma semana antes
         type: string
+      nextOccurrence:
+        example: "2027-08-15T00:00:00Z"
+        format: date-time
+        type: string
       recurrence:
-        $ref: '#/definitions/domain.ReminderRecurrence'
+        allOf:
+        - $ref: '#/definitions/domain.ReminderRecurrence'
         example: yearly
       reminderID:
         example: d8c8efdf-c52f-4d6b-8e2e-b83f78de4f77
         type: string
       triggerAt:
-        description: Para eventos pontuais (recurrence=none) e a data absoluta. Para
-          recorrentes, e a primeira ocorrencia; proximas sao derivadas pela cadencia.
         example: "2026-08-15T00:00:00Z"
         format: date-time
         type: string
       type:
-        description: Tipo da ocasiao (ex.: birthday, anniversary, holiday, christmas,
-          valentines, mothers_day, fathers_day) ou valor custom definido pelo usuario.
         example: birthday
         type: string
       userID:
         example: 5581a365-394f-467d-ae13-0d01e4cf1863
         type: string
     type: object
+  domain.ReminderRecurrence:
+    enum:
+    - none
+    - yearly
+    - monthly
+    - weekly
+    - daily
+    type: string
+    x-enum-varnames:
+    - ReminderRecurrenceNone
+    - ReminderRecurrenceYearly
+    - ReminderRecurrenceMonthly
+    - ReminderRecurrenceWeekly
+    - ReminderRecurrenceDaily
   domain.User:
     properties:
       active:
@@ -298,16 +298,14 @@ definitions:
         example: Comprar presente ate uma semana antes
         type: string
       recurrence:
-        $ref: '#/definitions/domain.ReminderRecurrence'
+        allOf:
+        - $ref: '#/definitions/domain.ReminderRecurrence'
         example: yearly
       triggerAt:
-        description: Primeira ocorrencia no formato YYYY-MM-DD. Para recurrence=none
-          e a data unica do evento.
         example: "2026-08-15"
         format: date
         type: string
       type:
-        description: Tipo da ocasiao pre-definido ou custom. Ver domain.Reminder.type.
         example: birthday
         type: string
       userID:
@@ -719,6 +717,31 @@ paths:
       tags:
       - profile-photos
   /gifts/{giftId}:
+    delete:
+      parameters:
+      - description: ID do presente
+        in: path
+        name: giftId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Gift'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Remover sugestão de presente
+      tags:
+      - gifts
     post:
       consumes:
       - application/json
@@ -911,11 +934,37 @@ paths:
       tags:
       - profile-agent
   /reminders/{reminderId}:
+    delete:
+      parameters:
+      - description: ID do lembrete
+        in: path
+        name: reminderId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Reminder'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/http.ErrorResponse'
+      summary: Remover lembrete
+      tags:
+      - reminders
     post:
       consumes:
       - application/json
-      description: 'Exemplo de payload: {"userID":"a3f24e53-0d56-46d9-8ea2-0dbb5f64da8a","friendID":"9b02ce54-4f42-4a8b-a539-5b53a6e37e63","type":"anniversary","triggerAt":"2026-09-20","recurrence":"yearly","message":"Enviar
-        flores"}. Campo triggerAt no formato YYYY-MM-DD. Atualizar recurrence recalcula as proximas ocorrencias.'
+      description: 'Exemplo de payload: {"userID":"a3f24e53-0d56-469d-8ea2-0dbb5f64da8a","friendID":"9b02ce54-4f42-4a8b-a539-5b53a6e37e63","type":"anniversary","triggerAt":"2026-09-20","recurrence":"yearly","message":"Enviar
+        flores"}. Campo triggerAt no formato YYYY-MM-DD. Atualizar recurrence recalcula
+        as proximas ocorrencias.'
       parameters:
       - description: ID do lembrete
         in: path
@@ -1215,8 +1264,7 @@ paths:
       description: 'Exemplo de payload: {"friendID":"9b02ce54-4f42-4a8b-a539-5b53a6e37e63","type":"birthday","triggerAt":"2026-08-15","recurrence":"yearly","message":"Comprar
         presente ate uma semana antes"}. Campo triggerAt no formato YYYY-MM-DD. Campo
         recurrence opcional (default "none"); usar "yearly"/"monthly"/"weekly"/"daily"
-        para eventos recorrentes — o backend derivara as proximas ocorrencias a partir
-        de triggerAt.'
+        para eventos recorrentes.'
       parameters:
       - description: ID do usuário
         in: path

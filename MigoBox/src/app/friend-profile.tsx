@@ -687,7 +687,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   giftTagPill: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 4,

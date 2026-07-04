@@ -421,10 +421,10 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1, backgroundColor: '#f9f6f0' },
   loadingContainer: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    gap: 10, backgroundColor: '#F8F9FA',
+    gap: 10, backgroundColor: '#f9f6f0',
   },
   loadingText: { color: '#2D3436', fontSize: 14, fontFamily: 'Nunito_700Bold' },
 
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', gap: 10, paddingTop: 4 },
   actionButton: {
     width: 44, height: 44, borderRadius: 14,
-    backgroundColor: '#F8F9FA', borderWidth: 2, borderColor: '#ECECEC',
+    backgroundColor: '#f9f6f0', borderWidth: 2, borderColor: '#ECECEC',
     alignItems: 'center', justifyContent: 'center',
   },
   notificationDot: {
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1, alignItems: 'center', paddingVertical: 8,
-    backgroundColor: '#F8F9FA', borderRadius: 12, borderWidth: 2, borderColor: '#ECECEC',
+    backgroundColor: '#f9f6f0', borderRadius: 12, borderWidth: 2, borderColor: '#ECECEC',
   },
   statEmoji: { fontSize: 18 },
   statValue: { color: '#2D3436', fontSize: 16, fontFamily: 'Nunito_800ExtraBold' },

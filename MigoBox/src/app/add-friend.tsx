@@ -431,7 +431,7 @@ export default function AddFriendScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#f9f6f0',
   },
   safeArea: {
     flex: 1,
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#ECECEC',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
   },
   modeOptionSelected: {
     borderColor: '#1CB0F6',
-    backgroundColor: '#E7F7FF',
+    backgroundColor: '#ffffff',
   },
   modeEmoji: {
     fontSize: 18,
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#ECECEC',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
     padding: 12,
     gap: 10,
   },
@@ -600,14 +600,14 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 16,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
     borderWidth: 2,
     borderColor: '#ECECEC',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarOptionSelected: {
-    backgroundColor: '#E7F7FF',
+    backgroundColor: '#ffffff',
     borderColor: '#1CB0F6',
   },
   avatarOptionEmoji: {
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 52,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#ECECEC',
@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 14,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
     borderWidth: 2,
     borderColor: '#ECECEC',
   },
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 24,
-    backgroundColor: '#E7F7FF',
+    backgroundColor: '#ffffff',
     borderWidth: 2,
     borderColor: '#1CB0F6',
     alignItems: 'center',
@@ -699,14 +699,14 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 16,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
     borderWidth: 2,
     borderColor: '#ECECEC',
     alignItems: 'center',
     gap: 4,
   },
   genderOptionSelected: {
-    backgroundColor: '#E7F7FF',
+    backgroundColor: '#ffffff',
     borderColor: '#1CB0F6',
   },
   genderEmoji: {

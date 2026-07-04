@@ -240,7 +240,7 @@ export default function ChatBuilderScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#f9f6f0',
   },
   safeArea: {
     flex: 1,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#f9f6f0',
     borderWidth: 2,
     borderColor: '#ECECEC',
     alignItems: 'center',
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#f9f6f0',
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#ECECEC',

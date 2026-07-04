@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiClient, ApiError, DEFAULT_PROFILE_PHOTO_CONTENT_TYPE } from '@/api/api-client';
 import { useUserContext } from '@/context/user-context';
 import { domain } from '@/types/domain';
+import { calcProfileProgress } from '@/utils/profile';
 
 const ACCENT_COLORS = [
   '#1CB0F6', '#58CC02', '#A855F7', '#F43F5E',
@@ -81,6 +82,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
   const [photoUrlByFriendId, setPhotoUrlByFriendId] = useState<Record<string, string>>({});
+  const [profileByFriendId, setProfileByFriendId] = useState<Record<string, domain.Profile>>({});
 
   const friendNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -147,12 +149,16 @@ export default function HomeScreen() {
 
     friendIds.forEach(async (friendId) => {
       try {
-        const signedUrl = await apiClient.requestFriendProfilePhotoGetUrl(friendId);
+        const [signedUrl, profile] = await Promise.all([
+          apiClient.requestFriendProfilePhotoGetUrl(friendId),
+          apiClient.getFriendProfile(friendId),
+        ]);
         if (!cancelled) {
           setPhotoUrlByFriendId((prev) => ({ ...prev, [friendId]: signedUrl.url }));
+          setProfileByFriendId((prev) => ({ ...prev, [friendId]: profile }));
         }
       } catch {
-        // Sem foto cadastrada ou URL indisponivel - mantem o fallback do avatar/emoji.
+        // Sem foto/perfil cadastrado - mantem fallback do avatar/emoji e progresso 0% de tags.
       }
     });
 
@@ -183,6 +189,7 @@ export default function HomeScreen() {
     const days = daysUntilBirthday(item.birthDate);
     const age = calcAge(item.birthDate);
     const hasBirthdaySoon = days !== null && days <= 7;
+    const progress = calcProfileProgress(item, item.profile ?? profileByFriendId[item.friendID ?? '']);
 
     return (
       <TouchableOpacity
@@ -223,12 +230,11 @@ export default function HomeScreen() {
           <Text style={styles.friendRelation}>
             {item.userRelation ?? 'Amigo/a'}{age ? ` · ${age}` : ''}
           </Text>
-          {/* TODO: profile progress from friend.profile once API returns embedded data */}
           <View style={styles.progressRow}>
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { backgroundColor: color, width: 0 }]} />
+              <View style={[styles.progressFill, { backgroundColor: color, width: `${progress}%` }]} />
             </View>
-            <Text style={styles.progressLabel}>0%</Text>
+            <Text style={styles.progressLabel}>{progress}%</Text>
           </View>
         </View>
 
@@ -421,10 +427,10 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f6f0' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
   loadingContainer: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    gap: 10, backgroundColor: '#f9f6f0',
+    gap: 10, backgroundColor: '#F8FAFC',
   },
   loadingText: { color: '#2D3436', fontSize: 14, fontFamily: 'Nunito_700Bold' },
 
@@ -440,7 +446,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', gap: 10, paddingTop: 4 },
   actionButton: {
     width: 44, height: 44, borderRadius: 14,
-    backgroundColor: '#f9f6f0', borderWidth: 2, borderColor: '#ECECEC',
+    backgroundColor: '#F8FAFC', borderWidth: 2, borderColor: '#ECECEC',
     alignItems: 'center', justifyContent: 'center',
   },
   notificationDot: {
@@ -457,7 +463,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1, alignItems: 'center', paddingVertical: 8,
-    backgroundColor: '#f9f6f0', borderRadius: 12, borderWidth: 2, borderColor: '#ECECEC',
+    backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 2, borderColor: '#ECECEC',
   },
   statEmoji: { fontSize: 18 },
   statValue: { color: '#2D3436', fontSize: 16, fontFamily: 'Nunito_800ExtraBold' },

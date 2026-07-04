@@ -73,6 +73,15 @@ export type SuggestionCreateRequest = {
   reminderID?: string;
 };
 
+export type ReminderUpsertRequest = {
+  friendID?: string;
+  message?: string;
+  recurrence?: domain.ReminderRecurrence;
+  triggerAt?: string;
+  type?: string;
+  userID?: string;
+};
+
 function nextApiRequestId() {
   apiRequestSeq += 1;
   return apiRequestSeq;
@@ -261,9 +270,30 @@ export const apiClient = {
     return requestJson<domain.Reminder[]>(`/users/${userId}/reminders`);
   },
 
+  createReminder(userId: string, body: ReminderUpsertRequest) {
+    return requestJson<domain.Reminder>(`/users/${userId}/reminders`, {
+      method: 'PUT',
+      body,
+    });
+  },
+
+  updateReminder(reminderId: string, body: ReminderUpsertRequest) {
+    return requestJson<domain.Reminder>(`/reminders/${reminderId}`, {
+      method: 'POST',
+      body,
+    });
+  },
+
   createFriend(userId: string, body: FriendUpsertRequest) {
     return requestJson<domain.Friend>(`/users/${userId}/friends`, {
       method: 'PUT',
+      body,
+    });
+  },
+
+  updateFriend(friendId: string, body: FriendUpsertRequest) {
+    return requestJson<domain.Friend>(`/friends/${friendId}`, {
+      method: 'POST',
       body,
     });
   },

@@ -8,6 +8,8 @@ type ChunkyButtonProps = {
   loading?: boolean;
   variant?: 'primary' | 'fab';
   style?: StyleProp<ViewStyle>;
+  color?: string;
+  shadowColor?: string;
 };
 
 const COLORS = {
@@ -23,6 +25,8 @@ export function ChunkyButton({
   loading,
   variant = 'primary',
   style,
+  color,
+  shadowColor,
 }: ChunkyButtonProps) {
   const isFab = variant === 'fab';
 
@@ -33,6 +37,8 @@ export function ChunkyButton({
       style={({ pressed }) => [
         styles.base,
         isFab ? styles.fab : styles.primary,
+        color ? { backgroundColor: color } : null,
+        shadowColor ? { borderBottomColor: shadowColor } : null,
         pressed && !disabled && !loading ? styles.pressed : null,
         (disabled || loading) && styles.disabled,
         style,

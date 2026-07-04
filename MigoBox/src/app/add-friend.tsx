@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -17,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { apiClient, ApiError, FriendUpsertRequest, ProfilePhotoSignedUrlRequest } from '@/api/api-client';
+import { apiClient, ApiError, DEFAULT_PROFILE_PHOTO_CONTENT_TYPE, FriendUpsertRequest, ProfilePhotoSignedUrlRequest } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
 import { useUserContext } from '@/context/user-context';
 import { domain } from '@/types/domain';
@@ -74,11 +75,20 @@ function parseBirthDateToIso(text: string): string | undefined {
 export default function AddFriendScreen() {
   const router = useRouter();
   const { user } = useUserContext();
+  const params = useLocalSearchParams<{
+    mode?: string;
+    friendId?: string;
+    friendName?: string;
+    avatar?: string;
+  }>();
+  const isEditing = params.mode === 'edit' && Boolean(params.friendId);
+  const editingFriendId = params.friendId ?? '';
 
   const [step, setStep] = useState<1 | 2>(1);
   const [profileMode, setProfileMode] = useState<ProfileMode>('emoji');
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
   const [selectedPhoto, setSelectedPhoto] = useState<SelectedPhoto | null>(null);
+  const [existingPhotoUri, setExistingPhotoUri] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [relation, setRelation] = useState('');
   const [customRelation, setCustomRelation] = useState('');
@@ -86,10 +96,75 @@ export default function AddFriendScreen() {
   const [birthDateText, setBirthDateText] = useState('');
   const [gender, setGender] = useState<domain.Gender | ''>('');
   const [loading, setLoading] = useState(false);
+  const [prefilling, setPrefilling] = useState(isEditing);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isEditing || !editingFriendId) return;
+
+    let cancelled = false;
+    const prefill = async () => {
+      try {
+        const [loadedFriend, loadedPhotoUrl] = await Promise.all([
+          apiClient.getFriendById(editingFriendId),
+          apiClient
+            .requestFriendProfilePhotoGetUrl(editingFriendId)
+            .then((signed) => signed.url)
+            .catch(() => null),
+        ]);
+
+        if (cancelled) return;
+
+        setName(loadedFriend.name ?? '');
+        const loadedRelation = loadedFriend.userRelation ?? '';
+        if (RELATION_OPTIONS.includes(loadedRelation)) {
+          setRelation(loadedRelation);
+        } else if (loadedRelation) {
+          setRelation('Outro');
+          setCustomRelation(loadedRelation);
+        }
+
+        setCity(loadedFriend.city ?? '');
+        if (loadedFriend.birthDate) {
+          const iso = loadedFriend.birthDate.slice(0, 10);
+          const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (match) {
+            const [, year, month, day] = match;
+            setBirthDateText(`${day}/${month}/${year}`);
+          }
+        }
+        setGender(loadedFriend.gender ?? '');
+
+        const loadedAvatar = loadedFriend.avatar ?? '';
+        if (AVATAR_OPTIONS.includes(loadedAvatar)) {
+          setAvatar(loadedAvatar);
+          setProfileMode('emoji');
+        } else if (loadedAvatar.trim().length > 0) {
+          setAvatar(loadedAvatar);
+          setProfileMode('emoji');
+        }
+
+        if (loadedPhotoUrl) {
+          setExistingPhotoUri(loadedPhotoUrl);
+          setProfileMode('photo');
+        }
+      } catch (error) {
+        if (cancelled) return;
+        const apiError = error as ApiError;
+        setFriendlyError(apiError.message ?? 'Não foi possível carregar os dados do Migo.');
+      } finally {
+        if (!cancelled) setPrefilling(false);
+      }
+    };
+
+    void prefill();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing, editingFriendId]);
+
   const effectiveRelation = relation === 'Outro' ? customRelation.trim() : relation;
-  const hasProfileChoice = profileMode === 'emoji' || selectedPhoto !== null;
+  const hasProfileChoice = profileMode === 'emoji' || selectedPhoto !== null || existingPhotoUri !== null;
   const canProceedStep1 = name.trim().length >= 2 && effectiveRelation.length > 0 && hasProfileChoice;
 
   const pickPhotoMimeType = (asset: ImagePicker.ImagePickerAsset): 'image/jpeg' | 'image/png' => {
@@ -123,9 +198,11 @@ export default function AddFriendScreen() {
     });
   };
 
-  const uploadFriendProfilePhoto = async (friendId: string, photo: SelectedPhoto) => {
+  const uploadFriendProfilePhoto = async (friendId: string, photo: SelectedPhoto, hasExistingPhoto: boolean) => {
     const body: ProfilePhotoSignedUrlRequest = { contentType: photo.mimeType };
-    const signedUrl = await apiClient.requestFriendProfilePhotoUploadUrl(friendId, body);
+    const signedUrl = hasExistingPhoto
+      ? await apiClient.requestFriendProfilePhotoUpdateUrl(friendId, body)
+      : await apiClient.requestFriendProfilePhotoUploadUrl(friendId, body);
 
     if (signedUrl.method !== 'PUT') {
       throw new Error(`Metodo inesperado para upload: ${signedUrl.method}`);
@@ -156,7 +233,7 @@ export default function AddFriendScreen() {
     setStep(2);
   };
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     if (!user?.userID) {
       setFriendlyError('Sessao invalida. Volte e entre novamente.');
       return;
@@ -175,34 +252,62 @@ export default function AddFriendScreen() {
         gender: gender || undefined,
       };
 
-      const friend = await apiClient.createFriend(user.userID, payload);
+      let savedFriend: domain.Friend;
 
-      if (profileMode === 'photo' && selectedPhoto && friend.friendID) {
+      if (isEditing) {
+        savedFriend = await apiClient.updateFriend(editingFriendId, payload);
+      } else {
+        savedFriend = await apiClient.createFriend(user.userID, payload);
+      }
+
+      const targetFriendId = savedFriend.friendID ?? editingFriendId;
+
+      if (profileMode === 'photo' && selectedPhoto && targetFriendId) {
         try {
-          await uploadFriendProfilePhoto(friend.friendID, selectedPhoto);
+          await uploadFriendProfilePhoto(targetFriendId, selectedPhoto, Boolean(existingPhotoUri));
         } catch (photoError) {
           const message = photoError instanceof Error
             ? photoError.message
-            : 'Migo criado, mas nao foi possivel enviar a foto.';
+            : 'Migo salvo, mas nao foi possivel enviar a foto.';
           Alert.alert('Foto nao enviada', message);
         }
       }
 
-      router.replace({
-        pathname: '/chat-builder',
-        params: {
-          friendId: friend.friendID ?? '',
-          friendName: friend.name ?? name.trim(),
-          avatar: friend.avatar ?? avatar,
-        },
-      } as never);
+      if (isEditing) {
+        router.replace({
+          pathname: '/friend-profile',
+          params: {
+            friendId: targetFriendId,
+            friendName: savedFriend.name ?? name.trim(),
+            avatar: savedFriend.avatar ?? avatar,
+          },
+        } as never);
+      } else {
+        router.replace({
+          pathname: '/chat-builder',
+          params: {
+            friendId: targetFriendId,
+            friendName: savedFriend.name ?? name.trim(),
+            avatar: savedFriend.avatar ?? avatar,
+          },
+        } as never);
+      }
     } catch (error) {
       const apiError = error as ApiError;
-      setFriendlyError(apiError.message ?? 'Nao foi possivel criar o migo agora. Tente novamente.');
+      setFriendlyError(apiError.message ?? 'Nao foi possivel salvar o migo agora. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (prefilling) {
+    return (
+      <View style={styles.prefillingContainer}>
+        <ActivityIndicator color="#1CB0F6" size="large" />
+        <Text style={styles.prefillingText}>Carregando dados do Migo... ✨</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -214,15 +319,17 @@ export default function AddFriendScreen() {
             <Ionicons name="chevron-back" size={22} color="#2D3436" />
           </TouchableOpacity>
           <View style={styles.headerTexts}>
-            <Text style={styles.kicker}>Passo {step} de 2</Text>
-            <Text style={styles.title}>Criar novo Migo 🧑‍🤝‍🧑</Text>
+            <Text style={styles.kicker}>{isEditing ? 'Edição' : `Passo ${step} de 2`}</Text>
+            <Text style={styles.title}>{isEditing ? 'Editar Migo ✏️' : 'Criar novo Migo 🧑‍🤝‍🧑'}</Text>
           </View>
         </View>
 
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressSegment, styles.progressFilled]} />
-          <View style={[styles.progressSegment, step === 2 && styles.progressFilled]} />
-        </View>
+        {!isEditing ? (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressSegment, styles.progressFilled]} />
+            <View style={[styles.progressSegment, step === 2 && styles.progressFilled]} />
+          </View>
+        ) : null}
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -259,6 +366,15 @@ export default function AddFriendScreen() {
                     <View style={styles.photoPreview}>
                       {selectedPhoto ? (
                         <Image source={{ uri: selectedPhoto.uri }} style={styles.photoImage} />
+                      ) : existingPhotoUri ? (
+                        <Image
+                          source={{
+                            uri: existingPhotoUri,
+                            headers: { 'Content-Type': DEFAULT_PROFILE_PHOTO_CONTENT_TYPE },
+                          }}
+                          style={styles.photoImage}
+                          onError={() => setExistingPhotoUri(null)}
+                        />
                       ) : (
                         <Text style={styles.photoPlaceholder}>📸</Text>
                       )}
@@ -270,7 +386,7 @@ export default function AddFriendScreen() {
                         onPress={() => void handlePickProfilePhoto()}
                         activeOpacity={0.8}>
                         <Text style={styles.photoActionText}>
-                          {selectedPhoto ? 'Trocar foto' : 'Adicionar foto'}
+                          {selectedPhoto || existingPhotoUri ? 'Trocar foto' : 'Adicionar foto'}
                         </Text>
                       </TouchableOpacity>
 
@@ -348,8 +464,16 @@ export default function AddFriendScreen() {
             <>
               <View style={styles.previewCard}>
                 <View style={styles.previewAvatar}>
-                  {profileMode === 'photo' && selectedPhoto ? (
-                    <Image source={{ uri: selectedPhoto.uri }} style={styles.previewPhotoImage} />
+                  {profileMode === 'photo' && (selectedPhoto || existingPhotoUri) ? (
+                    <Image
+                      source={{
+                        uri: selectedPhoto?.uri ?? existingPhotoUri ?? '',
+                        headers: selectedPhoto
+                          ? undefined
+                          : { 'Content-Type': DEFAULT_PROFILE_PHOTO_CONTENT_TYPE },
+                      }}
+                      style={styles.previewPhotoImage}
+                    />
                   ) : (
                     <Text style={styles.previewAvatarEmoji}>{avatar}</Text>
                   )}
@@ -402,8 +526,9 @@ export default function AddFriendScreen() {
               <View style={styles.tipBox}>
                 <Text style={styles.tipEmoji}>💡</Text>
                 <Text style={styles.tipText}>
-                  Depois de criar, vamos bater um papo com a nossa IA para descobrir gostos e ideias
-                  de presente para {name.trim() || 'essa pessoa'}.
+                  {isEditing
+                    ? `Atualize os dados de ${name.trim() || 'esse Migo'}. Você pode ajustar a foto, a relação ou adicionar a cidade e a data de nascimento.`
+                    : `Depois de criar, vamos bater um papo com a nossa IA para descobrir gostos e ideias de presente para ${name.trim() || 'essa pessoa'}.`}
                 </Text>
               </View>
             </>
@@ -417,8 +542,8 @@ export default function AddFriendScreen() {
             <ChunkyButton label="Proximo" onPress={handleNext} disabled={!canProceedStep1} />
           ) : (
             <ChunkyButton
-              label={loading ? 'Criando...' : 'Criar Migo e continuar 🎉'}
-              onPress={() => void handleCreate()}
+              label={loading ? 'Salvando...' : isEditing ? 'Salvar alterações ✏️' : 'Criar Migo e continuar 🎉'}
+              onPress={() => void handleSave()}
               loading={loading}
             />
           )}
@@ -431,7 +556,19 @@ export default function AddFriendScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f6f0',
+    backgroundColor: '#F8FAFC',
+  },
+  prefillingContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  prefillingText: {
+    color: '#717182',
+    fontSize: 14,
+    fontFamily: 'Nunito_700Bold',
   },
   safeArea: {
     flex: 1,
@@ -678,8 +815,18 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   previewPhotoImage: {
-    width: '100%',
-    height: '100%',
+    // width: '100%',
+    // height: '100%',
+    alignSelf: 'center',
+    width: 98,
+    height: 98,
+    borderRadius: 28,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#1CB0F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   previewName: {
     color: '#2D3436',

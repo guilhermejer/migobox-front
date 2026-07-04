@@ -19,12 +19,49 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiClient, ApiError, DEFAULT_PROFILE_PHOTO_CONTENT_TYPE, ProfilePhotoSignedUrlRequest } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
+import { ProfileHintBubble } from '@/components/profile-hint-bubble';
+import { ReminderFormModal } from '@/components/reminder-form-modal';
+import { useUserContext } from '@/context/user-context';
 import { domain } from '@/types/domain';
+import { buildHintMessage, calcProfileProgress, profileGaps } from '@/utils/profile';
 
 const TAG_COLORS = ['#1CB0F6', '#58CC02', '#FF9600', '#A855F7', '#F43F5E', '#10B981'];
 
 type TagFilter = 'all' | 'like' | 'dislike' | 'trait';
 type TagItem = { label: string; type: 'like' | 'dislike' | 'trait' };
+
+const OCCASION_META: { value: string; label: string; emoji: string }[] = [
+  { value: 'birthday', label: 'Aniversário', emoji: '🎂' },
+  { value: 'anniversary', label: 'Aniv. de casamento', emoji: '💍' },
+  { value: 'holiday', label: 'Data festiva', emoji: '🎉' },
+  { value: 'christmas', label: 'Natal', emoji: '🎄' },
+  { value: 'valentines', label: 'Namorados', emoji: '💌' },
+  { value: 'mothers_day', label: 'Dia das Mães', emoji: '🌷' },
+  { value: 'fathers_day', label: 'Dia dos Pais', emoji: '🧔' },
+];
+
+const RECURRENCE_META: Record<domain.ReminderRecurrence, string> = {
+  none: 'Único',
+  yearly: 'Anual',
+  monthly: 'Mensal',
+  weekly: 'Semanal',
+  daily: 'Diário',
+};
+
+function occasionMeta(type?: string): { label: string; emoji: string } {
+  const known = OCCASION_META.find((option) => option.value === type);
+  if (known) return { label: known.label, emoji: known.emoji };
+  return { label: type && type.trim().length > 0 ? type : 'Lembrete', emoji: '⭐' };
+}
+
+function formatDisplayDate(value?: string): string {
+  if (!value) return '';
+  const iso = value.length >= 10 ? value.slice(0, 10) : value;
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
 
 function calcAge(birthDate?: string): string | null {
   if (!birthDate) return null;
@@ -34,14 +71,17 @@ function calcAge(birthDate?: string): string | null {
   return `${years} anos`;
 }
 
-function tagColor(type: TagItem['type']) {
-  if (type === 'like') return '#065F46';
-  if (type === 'dislike') return '#9F1239';
-  return '#3730A3';
+type TagPalette = { background: string; text: string };
+
+function tagPalette(type: TagItem['type']): TagPalette {
+  if (type === 'like') return { background: '#D1FAE5', text: '#065F46' };
+  if (type === 'dislike') return { background: '#FFE4E6', text: '#9F1239' };
+  return { background: '#E0E7FF', text: '#3730A3' };
 }
 
 export default function FriendProfileScreen() {
   const router = useRouter();
+  const { user } = useUserContext();
   const params = useLocalSearchParams<{ friendId?: string; friendName?: string; avatar?: string }>();
   const friendId = params.friendId ?? '';
 
@@ -50,6 +90,9 @@ export default function FriendProfileScreen() {
   );
   const [profile, setProfile] = useState<domain.Profile | null>(null);
   const [gifts, setGifts] = useState<domain.Gift[]>([]);
+  const [reminders, setReminders] = useState<domain.Reminder[]>([]);
+  const [reminderFormVisible, setReminderFormVisible] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<domain.Reminder | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
@@ -59,6 +102,16 @@ export default function FriendProfileScreen() {
   const [occasionDetails, setOccasionDetails] = useState('');
   const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
 
+  const sortedReminders = useMemo(
+    () =>
+      [...reminders].sort((a, b) => {
+        const aTime = a.triggerAt ? new Date(a.triggerAt).getTime() : Number.MAX_SAFE_INTEGER;
+        const bTime = b.triggerAt ? new Date(b.triggerAt).getTime() : Number.MAX_SAFE_INTEGER;
+        return aTime - bTime;
+      }),
+    [reminders],
+  );
+
   const loadAll = useCallback(async () => {
     if (!friendId) {
       setLoading(false);
@@ -67,21 +120,31 @@ export default function FriendProfileScreen() {
 
     setFriendlyError(null);
 
+    const remindersPromise = user?.userID
+      ? apiClient
+          .listRemindersByUserId(user.userID)
+          .then((list) => list.filter((reminder) => reminder.friendID === friendId))
+          .catch(() => [] as domain.Reminder[])
+      : Promise.resolve([] as domain.Reminder[]);
+
     try {
-      const [loadedFriend, loadedProfile, loadedGifts, loadedPhotoUrl] = await Promise.all([
-        apiClient.getFriendById(friendId),
-        apiClient.getFriendProfile(friendId).catch(() => null),
-        apiClient.listGiftsByFriendId(friendId).catch(() => []),
-        apiClient
-          .requestFriendProfilePhotoGetUrl(friendId)
-          .then((signedUrl) => signedUrl.url)
-          .catch(() => null),
-      ]);
+      const [loadedFriend, loadedProfile, loadedGifts, loadedPhotoUrl, loadedReminders] =
+        await Promise.all([
+          apiClient.getFriendById(friendId),
+          apiClient.getFriendProfile(friendId).catch(() => null),
+          apiClient.listGiftsByFriendId(friendId).catch(() => []),
+          apiClient
+            .requestFriendProfilePhotoGetUrl(friendId)
+            .then((signedUrl) => signedUrl.url)
+            .catch(() => null),
+          remindersPromise,
+        ]);
 
       setFriend(loadedFriend);
       setProfile(loadedProfile);
       setGifts(loadedGifts);
       setPhotoUri(loadedPhotoUrl);
+      setReminders(loadedReminders);
     } catch (error) {
       const apiError = error as ApiError;
       setFriendlyError(apiError.message ?? 'Nao foi possivel carregar esse Migo agora.');
@@ -89,7 +152,7 @@ export default function FriendProfileScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [friendId]);
+  }, [friendId, user?.userID]);
 
   useEffect(() => {
     void loadAll();
@@ -103,12 +166,23 @@ export default function FriendProfileScreen() {
   const avatar = friend?.avatar && friend.avatar.trim().length > 0 ? friend.avatar : (params.avatar || '⭐');
   const age = calcAge(friend?.birthDate);
 
-  const progress = useMemo(() => {
-    if (!profile) return 0;
-    const total =
-      (profile.likes?.length ?? 0) + (profile.dislikes?.length ?? 0) + (profile.personality?.length ?? 0);
-    return Math.min(100, Math.round((total / 12) * 100));
-  }, [profile]);
+  const progress = useMemo(
+    () => calcProfileProgress(friend ?? {}, profile),
+    [friend, profile],
+  );
+
+  const gaps = useMemo(
+    () => (progress < 100 ? profileGaps(friend ?? {}, profile) : []),
+    [friend, profile, progress],
+  );
+
+  const hintMessage = useMemo(
+    () => (progress < 100 ? buildHintMessage(friend ?? {}, profile) : ''),
+    [friend, profile, progress],
+  );
+
+  const hasChatGap = gaps.some((gap) => gap.action === 'chat');
+  const hasEditGap = gaps.some((gap) => gap.action === 'edit');
 
   const allTags: TagItem[] = useMemo(() => {
     const likes = (profile?.likes ?? []).map((label) => ({ label, type: 'like' as const }));
@@ -130,6 +204,24 @@ export default function FriendProfileScreen() {
       pathname: '/chat-builder',
       params: { friendId, friendName: friend?.name ?? '', avatar },
     } as never);
+  };
+
+  const goToEdit = () => {
+    if (!friendId) return;
+    router.push({
+      pathname: '/add-friend',
+      params: {
+        mode: 'edit',
+        friendId,
+        friendName: friend?.name ?? '',
+        avatar,
+      },
+    } as never);
+  };
+
+  const handleHintAction = (action: 'chat' | 'edit' | 'dismiss') => {
+    if (action === 'chat') goToChat();
+    else if (action === 'edit') goToEdit();
   };
 
   const handleChangePhoto = async () => {
@@ -231,10 +323,40 @@ export default function FriendProfileScreen() {
       setGifts(loadedGifts);
     } catch (error) {
       const apiError = error as ApiError;
-      setFriendlyError(apiError.message ?? 'Nao foi possivel gerar sugestoes agora.');
+      setFriendlyError(apiError.message ?? 'Nao foi possivel gerar sugestões agora.');
     } finally {
       setGeneratingSuggestions(false);
     }
+  };
+
+  const openNewReminder = () => {
+    if (!user?.userID) {
+      setFriendlyError('Sessao invalida. Volte e entre novamente.');
+      return;
+    }
+    setEditingReminder(null);
+    setReminderFormVisible(true);
+  };
+
+  const openEditReminder = (reminder: domain.Reminder) => {
+    if (!user?.userID) {
+      setFriendlyError('Sessao invalida. Volte e entre novamente.');
+      return;
+    }
+    setEditingReminder(reminder);
+    setReminderFormVisible(true);
+  };
+
+  const onReminderSaved = (saved: domain.Reminder) => {
+    setReminders((prev) => {
+      const id = saved.reminderID;
+      if (id && prev.some((reminder) => reminder.reminderID === id)) {
+        return prev.map((reminder) => (reminder.reminderID === id ? { ...reminder, ...saved } : reminder));
+      }
+      return [...prev, saved];
+    });
+    setReminderFormVisible(false);
+    setEditingReminder(null);
   };
 
   if (loading && !friend) {
@@ -263,9 +385,14 @@ export default function FriendProfileScreen() {
                 <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
               </TouchableOpacity>
               <Text style={styles.heroTitle}>Raio-X ✨</Text>
-              <TouchableOpacity style={styles.heroIconButton} onPress={goToChat} activeOpacity={0.8}>
-                <Ionicons name="chatbubble-ellipses-outline" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
+              <View style={styles.heroActions}>
+                <TouchableOpacity style={styles.heroIconButton} onPress={goToEdit} activeOpacity={0.8}>
+                  <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.heroIconButton} onPress={goToChat} activeOpacity={0.8}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <TouchableOpacity
@@ -303,18 +430,30 @@ export default function FriendProfileScreen() {
             <View style={styles.progressBadge}>
               <Text style={styles.progressBadgeText}>Perfil {progress}% completo</Text>
             </View>
+
+            <TouchableOpacity style={styles.heroChatCta} onPress={goToChat} activeOpacity={0.85}>
+              <Ionicons name="chatbubble-ellipses" size={20} color="#FFFFFF" />
+              <Text style={styles.heroChatCtaText}>Conte-me mais sobre essa pessoa 💬</Text>
+            </TouchableOpacity>
           </SafeAreaView>
         </View>
 
         <View style={styles.body}>
           {friendlyError ? <Text style={styles.error}>{friendlyError}</Text> : null}
 
+          <ProfileHintBubble
+            message={hintMessage}
+            hasChatAction={hasChatGap}
+            hasEditAction={hasEditGap}
+            onAction={handleHintAction}
+          />
+
           <Text style={styles.sectionTitle}>Personalidade</Text>
 
           <View style={styles.filterRow}>
             {(['all', 'like', 'dislike', 'trait'] as const).map((filter) => {
               const filterLabel =
-                filter === 'all' ? 'Tudo' : filter === 'like' ? 'Gostos' : filter === 'dislike' ? 'Nao gosta' : 'Tracos';
+                filter === 'all' ? 'Tudo' : filter === 'like' ? 'Gostos' : filter === 'dislike' ? 'Nao gosta' : 'Traços';
               const selected = activeFilter === filter;
               return (
                 <TouchableOpacity
@@ -334,16 +473,16 @@ export default function FriendProfileScreen() {
             <View style={styles.tagsViewport}>
               <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
                 <View style={styles.tagsWrap}>
-                  {sortedFilteredTags.map((tag, index) => (
-                    <View
-                      key={`${tag.type}-${tag.label}-${index}`}
-                      style={[
-                        styles.tagPill,
-                        { backgroundColor: tagColor(tag.type) + '1A', borderColor: tagColor(tag.type) },
-                      ]}>
-                      <Text style={[styles.tagPillText, { color: tagColor(tag.type) }]}>{tag.label}</Text>
-                    </View>
-                  ))}
+                  {sortedFilteredTags.map((tag, index) => {
+                    const palette = tagPalette(tag.type);
+                    return (
+                      <View
+                        key={`${tag.type}-${tag.label}-${index}`}
+                        style={[styles.tagPill, { backgroundColor: palette.background }]}>
+                        <Text style={[styles.tagPillText, { color: palette.text }]}>{tag.label}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
               </ScrollView>
             </View>
@@ -361,20 +500,87 @@ export default function FriendProfileScreen() {
 
           <View style={styles.divider} />
 
-          <Text style={styles.sectionTitle}>Sugestoes de presente 🎁</Text>
+          <View style={styles.remindersHeader}>
+            <Text style={styles.sectionTitle}>Lembretes 🔔</Text>
+            <TouchableOpacity
+              style={styles.reminderAddButton}
+              onPress={openNewReminder}
+              activeOpacity={0.8}
+              disabled={!user?.userID}>
+              <Ionicons name="add" size={20} color="#FFFFFF" />
+              <Text style={styles.reminderAddText}>Novo</Text>
+            </TouchableOpacity>
+          </View>
+
+          {sortedReminders.length > 0 ? (
+            <View style={styles.remindersList}>
+              {sortedReminders.map((reminder, index) => {
+                const meta = occasionMeta(reminder.type);
+                const recurrenceLabel = RECURRENCE_META[reminder.recurrence ?? 'none'];
+                const isRecurring = (reminder.recurrence ?? 'none') !== 'none';
+                return (
+                  <TouchableOpacity
+                    key={reminder.reminderID ?? `${reminder.type}-${reminder.triggerAt}-${index}`}
+                    style={styles.reminderCard}
+                    activeOpacity={0.85}
+                    onPress={() => openEditReminder(reminder)}>
+                    <View
+                      style={[
+                        styles.reminderIcon,
+                        { backgroundColor: TAG_COLORS[index % TAG_COLORS.length] + '22' },
+                      ]}>
+                      <Text style={styles.reminderIconEmoji}>{meta.emoji}</Text>
+                    </View>
+                    <View style={styles.reminderBody}>
+                      <Text style={styles.reminderTitle} numberOfLines={1}>
+                        {meta.label}
+                      </Text>
+                      <Text style={styles.reminderDate}>{formatDisplayDate(reminder.triggerAt)}</Text>
+                      {reminder.message ? (
+                        <Text style={styles.reminderMessage} numberOfLines={2}>
+                          {reminder.message}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {isRecurring ? (
+                      <View style={styles.recurrenceBadge}>
+                        <Text style={styles.recurrenceBadgeText}>🔁 {recurrenceLabel}</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={styles.emptyReminders}>
+              <Text style={styles.emptyRemindersEmoji}>📭</Text>
+              <Text style={styles.emptyRemindersText}>
+                Nenhum lembrete para {friend?.name ?? 'esse Migo'} ainda.
+              </Text>
+              <TouchableOpacity style={styles.emptyRemindersCta} onPress={openNewReminder} activeOpacity={0.85}>
+                <Text style={styles.emptyRemindersCtaText}>+ Adicionar lembrete</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={styles.divider} />
+
+          <Text style={styles.sectionTitle}>Sugestões 🎁</Text>
 
           <TextInput
             value={occasionDetails}
             onChangeText={setOccasionDetails}
-            placeholder="Alguma ocasiao especial? (opcional)"
+            placeholder="Alguma ocasião especial? (opcional)"
             placeholderTextColor="#9AA3AD"
             style={styles.input}
           />
 
           <ChunkyButton
-            label={generatingSuggestions ? 'Gerando...' : '🎁 Sugerir presentes'}
+            label={generatingSuggestions ? 'Gerando...' : '💡 Sugerir'}
             onPress={() => void handleGenerateSuggestions()}
             loading={generatingSuggestions}
+            color="#3B82F6"
+            shadowColor="#1D4ED8"
           />
 
           <View style={styles.giftsList}>
@@ -415,6 +621,21 @@ export default function FriendProfileScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {user?.userID ? (
+        <ReminderFormModal
+          visible={reminderFormVisible}
+          friendId={friendId}
+          userId={user.userID}
+          friendName={friend?.name ?? params.friendName ?? 'seu Migo'}
+          editing={editingReminder}
+          onClose={() => {
+            setReminderFormVisible(false);
+            setEditingReminder(null);
+          }}
+          onSaved={onReminderSaved}
+        />
+      ) : null}
     </View>
   );
 }
@@ -422,11 +643,11 @@ export default function FriendProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#F8FAFC',
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
@@ -437,7 +658,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito_700Bold',
   },
   hero: {
-    backgroundColor: '#1CB0F6',
+    backgroundColor: '#E0F2FE',
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     paddingBottom: 22,
@@ -453,14 +674,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(3,105,161,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroTitle: {
-    color: '#FFFFFF',
+    color: '#0F172A',
     fontSize: 16,
     fontFamily: 'Nunito_800ExtraBold',
+  },
+  heroActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
   avatarWrap: {
     alignSelf: 'center',
@@ -495,7 +720,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroName: {
-    color: '#FFFFFF',
+    color: '#0F172A',
     fontSize: 22,
     fontFamily: 'Nunito_900Black',
     textAlign: 'center',
@@ -509,22 +734,41 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   heroMeta: {
-    color: '#E7F7FF',
+    color: '#0369A1',
     fontSize: 13,
     fontFamily: 'Nunito_700Bold',
   },
   progressBadge: {
     alignSelf: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(3,105,161,0.12)',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 6,
     marginTop: 12,
   },
   progressBadgeText: {
-    color: '#FFFFFF',
+    color: '#0369A1',
     fontSize: 12,
     fontFamily: 'Nunito_800ExtraBold',
+  },
+  heroChatCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    marginTop: 14,
+    backgroundColor: '#58CC02',
+    borderRadius: 16,
+    borderBottomWidth: 5,
+    borderBottomColor: '#46A302',
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+  },
+  heroChatCtaText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: 'Nunito_900Black',
   },
   body: {
     padding: 20,
@@ -544,16 +788,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#ECECEC',
+    backgroundColor: '#F1F5F9',
   },
   filterChipSelected: {
-    backgroundColor: '#1CB0F6',
-    borderColor: '#1CB0F6',
+    backgroundColor: '#334155',
   },
   filterChipText: {
-    color: '#2D3436',
+    color: '#64748B',
     fontSize: 12,
     fontFamily: 'Nunito_800ExtraBold',
   },
@@ -572,7 +813,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 14,
-    borderWidth: 2,
   },
   tagPillText: {
     fontSize: 13,
@@ -687,7 +927,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   giftTagPill: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f9f6f0',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -701,5 +941,118 @@ const styles = StyleSheet.create({
     color: '#D64545',
     fontSize: 13,
     fontFamily: 'Nunito_700Bold',
+  },
+
+  remindersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reminderAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1CB0F6',
+    borderRadius: 14,
+    borderBottomWidth: 4,
+    borderBottomColor: '#1699D8',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  reminderAddText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  remindersList: {
+    gap: 12,
+    marginTop: 4,
+  },
+  reminderCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    borderBottomWidth: 4,
+    borderBottomColor: '#D8E0E8',
+    padding: 14,
+    gap: 12,
+    alignItems: 'center',
+  },
+  reminderIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reminderIconEmoji: {
+    fontSize: 20,
+  },
+  reminderBody: {
+    flex: 1,
+    gap: 3,
+  },
+  reminderTitle: {
+    color: '#2D3436',
+    fontSize: 15,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  reminderDate: {
+    color: '#FF9600',
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  reminderMessage: {
+    color: '#717182',
+    fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
+    lineHeight: 16,
+  },
+  recurrenceBadge: {
+    backgroundColor: '#E7F7FF',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  recurrenceBadgeText: {
+    color: '#0369A1',
+    fontSize: 11,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  emptyReminders: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    borderBottomWidth: 5,
+    borderBottomColor: '#D8E0E8',
+    padding: 20,
+    alignItems: 'center',
+    gap: 10,
+  },
+  emptyRemindersEmoji: {
+    fontSize: 32,
+  },
+  emptyRemindersText: {
+    color: '#717182',
+    fontSize: 13,
+    fontFamily: 'Nunito_700Bold',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  emptyRemindersCta: {
+    backgroundColor: '#FF9600',
+    borderRadius: 14,
+    borderBottomWidth: 4,
+    borderBottomColor: '#C97200',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  emptyRemindersCtaText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontFamily: 'Nunito_800ExtraBold',
   },
 });

@@ -1,6 +1,8 @@
 export namespace domain {
   export type Gender = 'male' | 'female' | 'other';
 
+  export type ReminderRecurrence = 'none' | 'yearly' | 'monthly' | 'weekly' | 'daily';
+
   export interface User {
     active?: boolean;
     birthDate?: string;
@@ -18,6 +20,7 @@ export namespace domain {
     friendID?: string;
     gender?: Gender;
     name?: string;
+    profile?: Profile;
     userID?: string;
     userRelation?: string;
   }
@@ -44,6 +47,7 @@ export namespace domain {
   export interface Reminder {
     friendID?: string;
     message?: string;
+    recurrence?: ReminderRecurrence;
     reminderID?: string;
     triggerAt?: string;
     type?: string;

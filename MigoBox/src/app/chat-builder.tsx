@@ -240,7 +240,7 @@ export default function ChatBuilderScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f6f0',
+    backgroundColor: '#F8FAFC',
   },
   safeArea: {
     flex: 1,

@@ -24,7 +24,7 @@ Público-alvo: jovens de 15 a 35 anos. Tom: lúdico e acolhedor.
 
 ## Lacunas por prioridade
 
-### P0 — núcleo da visão, bloqueia o "migo que presenteia/passeia"
+### P0 — núcleo da visão, bloqueia o "migo que presenteia/passeia" ✅ Done 
 
 - **Budget não modelado.** Não há campo de orçamento em `domain`, em `SuggestionCreateRequest`, nem na UI. A visão exige sugestões por budget.
   - Proposta: adicionar `budget` (string range ou `{min, max, currency}`) em `SuggestionCreateRequest` e no `apiClient.createSuggestions`; expor input na tela de perfil/amigo; repassar ao gerar.
@@ -83,41 +83,3 @@ Público-alvo: jovens de 15 a 35 anos. Tom: lúdico e acolhedor.
 | Backend — endpoint DELETE `/reminders/{reminderId}` | ❌ Pending (não está no swagger) |
 
 > Nota: o backend em Go ignora campos desconhecidos por padrão (`json.Unmarshal`), então criar lembretes **pontuais** (`recurrence: "none"` ou omitido) já funciona hoje. O campo `recurrence` só passa a ser persistido/validado após a adaptação abaixo.
-
-### Spec para o backend
-
-**1. Entidade / modelo (`domain.Reminder` em Go)**
-- Adicionar campo `Recurrence string` com valores: `none`, `yearly`, `monthly`, `weekly`, `daily`.
-- Default `none` quando vazio (eventos pontuais).
-- Mapear para coluna `recurrence VARCHAR(20) NOT NULL DEFAULT 'none'` (ou usar um tipo enum do SGBD).
-
-**2. Validação (handler HTTP)**
-- `recurrence` deve ser um dos valores do enum; rejeitar com 400 caso contrário.
-- `triggerAt` continua `YYYY-MM-DD` (formato `date`).
-- Quando `recurrence != none`, `triggerAt` representa a **primeira ocorrência**.
-
-**3. Cálculo de próximas ocorrências**
-- Decidir estratégia (a definir com o time de backend):
-  - **(a) Expansão preguiçosa (lazy)**: não materializar ocorrências futuras; calcular a próxima on-the-fly a partir de `triggerAt` + `recurrence` quando o scheduler/notifier precisar. Mais simples, sem tabela auxiliar.
-  - **(b) Materialização (eager)**: gerar registros de ocorrências em uma tabela `reminder_occurrences` (ou usar `triggerAt` como base + job periódico). Mais flexível para "marcar como feito" individualmente, mas mais complexo.
-  - Recomendação inicial: **(a) lazy** — calcular próxima ocorrência em memória no scheduler. Migrar para (b) se houver necessidade de ack/editar ocorrências individuais.
-- Fórmulas sugeridas (próxima ocorrência a partir de `last = triggerAt`):
-  - `yearly`: mesmo dia/mês do ano seguinte.
-  - `monthly`: mesmo dia do mês seguinte (cuidar de meses com menos dias).
-  - `weekly`: +7 dias.
-  - `daily`: +1 dia.
-  - `none`: sem próxima (evento único).
-
-**4. Migração de schema**
-- `ALTER TABLE reminders ADD COLUMN recurrence VARCHAR(20) NOT NULL DEFAULT 'none';`
-- Backfill: todos os lembretes existentes ficam `none` (pontuais) — compatível com o comportamento atual.
-
-**5. Endpoint DELETE (futuro)**
-- Adicionar `DELETE /reminders/{reminderId}` ao swagger/backend para permitir remover lembretes da UI (hoje só cria/edita).
-
-**6. Listagem por friend (futuro, opcional)**
-- Hoje o app filtra `listRemindersByUserId` por `friendID` no cliente. Considerar `GET /friends/{friendId}/reminders` no backend para evitar carregar todos os lembretes do usuário.
-
-## Relação com `MigoBox/.docs/api-todos.md`
-
-O `api-todos.md` cobre TODOs pontuais por tela (notificações, configurações, auth, "Datas", etc.). Este roadmap agrega a **visão de produto** (budget, passeios, automação, suggestion-agent, profile embutido) que não está lá. Ao atacar um item, atualize ambos: o `api-todos.md` no detalhe do endpoint e o `product-roadmap.md` no status da feature.

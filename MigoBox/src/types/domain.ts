@@ -31,6 +31,7 @@ export namespace domain {
     friendID?: string;
     likes?: string[];
     personality?: string[];
+    budget?: string;
   }
 
   export interface Gift {
@@ -42,6 +43,7 @@ export namespace domain {
     reminderID?: string;
     tags?: string[];
     title?: string;
+    type?: 'gift' | 'outing';
   }
 
   export interface Reminder {

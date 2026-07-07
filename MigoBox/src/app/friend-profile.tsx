@@ -20,13 +20,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiClient, ApiError, DEFAULT_PROFILE_PHOTO_CONTENT_TYPE, ProfilePhotoSignedUrlRequest } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
 import { ConfirmDeleteModal } from '@/components/confirm-delete-modal';
+import { GiftDetailModal } from '@/components/gift-detail-modal';
 import { ProfileHintBubble } from '@/components/profile-hint-bubble';
 import { ReminderFormModal } from '@/components/reminder-form-modal';
+import { SuggestionChatModal } from '@/components/suggestion-chat-modal';
 import { useUserContext } from '@/context/user-context';
 import { domain } from '@/types/domain';
 import { buildHintMessage, calcProfileProgress, profileGaps } from '@/utils/profile';
 
 const TAG_COLORS = ['#1CB0F6', '#58CC02', '#FF9600', '#A855F7', '#F43F5E', '#10B981'];
+const BUDGET_OPTIONS = [
+  { key: 'ate100', label: 'Até R$100', value: 'Até R$100' },
+  { key: '100-200', label: 'R$100 à R$200', value: 'R$100 à R$200' },
+  { key: '200-500', label: 'R$200 à R$500', value: 'R$200 à R$500' },
+  { key: 'outro', label: 'Outro', value: null },
+] as const;
 
 type TagFilter = 'all' | 'like' | 'dislike' | 'trait';
 type TagItem = { label: string; type: 'like' | 'dislike' | 'trait' };
@@ -98,6 +106,8 @@ export default function FriendProfileScreen() {
     { kind: 'reminder' | 'gift'; id: string; label: string } | null
   >(null);
   const [deleting, setDeleting] = useState(false);
+  const [detailGift, setDetailGift] = useState<domain.Gift | null>(null);
+  const [chatGift, setChatGift] = useState<domain.Gift | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
@@ -106,6 +116,11 @@ export default function FriendProfileScreen() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [occasionDetails, setOccasionDetails] = useState('');
   const [generatingSuggestions, setGeneratingSuggestions] = useState(false);
+  const [budget, setBudget] = useState('');
+  const [customBudget, setCustomBudget] = useState('');
+  const [savingBudget, setSavingBudget] = useState(false);
+  const [outroActive, setOutroActive] = useState(false);
+  const [suggestionType, setSuggestionType] = useState<'gift' | 'outing' | 'mixed'>('mixed');
 
   const sortedReminders = useMemo(
     () =>
@@ -147,6 +162,7 @@ export default function FriendProfileScreen() {
 
       setFriend(loadedFriend);
       setProfile(loadedProfile);
+      setBudget(loadedProfile?.budget ?? '');
       setGifts(loadedGifts);
       setPhotoUri(loadedPhotoUrl);
       setReminders(loadedReminders);
@@ -322,8 +338,10 @@ export default function FriendProfileScreen() {
     setFriendlyError(null);
 
     try {
-      // TODO(API): permitir vincular a um reminderID especifico quando a selecao de lembretes existir.
-      await apiClient.createSuggestions(friendId, { occasionDetails: occasionDetails.trim() || undefined });
+      await apiClient.createSuggestions(friendId, {
+        occasionDetails: occasionDetails.trim() || 'Nenhuma ocasião especial',
+        suggestionType,
+      });
       const loadedGifts = await apiClient.listGiftsByFriendId(friendId);
       setGifts(loadedGifts);
     } catch (error) {
@@ -331,6 +349,40 @@ export default function FriendProfileScreen() {
       setFriendlyError(apiError.message ?? 'Nao foi possivel gerar sugestões agora.');
     } finally {
       setGeneratingSuggestions(false);
+    }
+  };
+
+  const saveBudget = async (newBudget: string) => {
+    if (!friendId || savingBudget) return;
+    setSavingBudget(true);
+    try {
+      await apiClient.updateProfile(friendId, { friendID: friendId, budget: newBudget });
+      setBudget(newBudget);
+      setProfile((prev) => (prev ? { ...prev, budget: newBudget } : prev));
+    } catch (error) {
+      const apiError = error as ApiError;
+      setFriendlyError(apiError.message ?? 'Nao foi possivel salvar o orcamento.');
+    } finally {
+      setSavingBudget(false);
+    }
+  };
+
+  const handleBudgetChip = (value: string | null) => {
+    if (budget === value) {
+      void saveBudget('');
+      setOutroActive(false);
+    } else if (value) {
+      void saveBudget(value);
+      setOutroActive(false);
+    } else {
+      setOutroActive(true);
+    }
+  };
+
+  const handleCustomBudgetSubmit = () => {
+    const trimmed = customBudget.trim();
+    if (trimmed) {
+      void saveBudget(`Até R$${trimmed}`);
     }
   };
 
@@ -626,6 +678,72 @@ export default function FriendProfileScreen() {
             style={styles.input}
           />
 
+          <Text style={styles.budgetLabel}>Defina um orçamento (opcional)</Text>
+
+          <View style={styles.budgetRow}>
+            {BUDGET_OPTIONS.map((opt) => {
+              const selected = opt.value !== null && budget === opt.value;
+              const isOutroSelected = opt.value === null && (outroActive || (budget !== '' && !BUDGET_OPTIONS.slice(0, 3).some((o) => o.value === budget)));
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[
+                    styles.budgetChip,
+                    (selected || isOutroSelected) && styles.budgetChipSelected,
+                  ]}
+                  onPress={() => handleBudgetChip(opt.value)}
+                  activeOpacity={0.8}
+                  disabled={savingBudget}>
+                  <Text
+                    style={[
+                      styles.budgetChipText,
+                      (selected || isOutroSelected) && styles.budgetChipTextSelected,
+                    ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {outroActive ? (
+            <View style={styles.budgetCustomRow}>
+              <Text style={styles.budgetCustomPrefix}>R$</Text>
+              <TextInput
+                value={customBudget}
+                onChangeText={(text) => setCustomBudget(text.replace(/\D/g, ''))}
+                placeholder="limite"
+                placeholderTextColor="#9AA3AD"
+                keyboardType="numeric"
+                maxLength={60}
+                style={styles.budgetCustomInput}
+                onBlur={handleCustomBudgetSubmit}
+                onSubmitEditing={handleCustomBudgetSubmit}
+              />
+            </View>
+          ) : null}
+
+          <View style={styles.suggestionTypeRow}>
+            {(['mixed', 'gift', 'outing'] as const).map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.suggestionTypeChip,
+                  suggestionType === type && styles.suggestionTypeChipSelected,
+                ]}
+                onPress={() => setSuggestionType(type)}
+                activeOpacity={0.8}>
+                <Text
+                  style={[
+                    styles.suggestionTypeChipText,
+                    suggestionType === type && styles.suggestionTypeChipTextSelected,
+                  ]}>
+                  {type === 'mixed' ? 'Ambos' : type === 'gift' ? 'Presente' : 'Passeio'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <ChunkyButton
             label={generatingSuggestions ? 'Gerando...' : '💡 Sugerir'}
             onPress={() => void handleGenerateSuggestions()}
@@ -641,7 +759,11 @@ export default function FriendProfileScreen() {
               </Text>
             ) : (
               gifts.map((gift, index) => (
-                <View key={gift.giftID ?? index} style={styles.giftCard}>
+                <TouchableOpacity
+                  key={gift.giftID ?? index}
+                  style={styles.giftCard}
+                  activeOpacity={0.85}
+                  onPress={() => setDetailGift(gift)}>
                   <View style={styles.cardDeleteButtonShadow} />
                   <TouchableOpacity
                     style={styles.cardDeleteButton}
@@ -651,8 +773,15 @@ export default function FriendProfileScreen() {
                   </TouchableOpacity>
                   <View
                     style={[styles.giftIcon, { backgroundColor: TAG_COLORS[index % TAG_COLORS.length] + '22' }]}>
-                    <Text style={styles.giftIconEmoji}>🎁</Text>
+                    <Text style={styles.giftIconEmoji}>
+                      {gift.type === 'outing' ? '🎟️' : '🎁'}
+                    </Text>
                   </View>
+                  {gift.type === 'outing' ? (
+                    <View style={styles.giftTypeBadge}>
+                      <Text style={styles.giftTypeBadgeText}>Passeio</Text>
+                    </View>
+                  ) : null}
                   <View style={styles.giftBody}>
                     <Text style={styles.giftTitle} numberOfLines={1}>
                       {gift.title ?? 'Ideia de presente'}
@@ -673,7 +802,7 @@ export default function FriendProfileScreen() {
                       </View>
                     ) : null}
                   </View>
-                </View>
+                </TouchableOpacity>
               ))
             )}
           </View>
@@ -706,6 +835,20 @@ export default function FriendProfileScreen() {
         loading={deleting}
         onConfirm={() => void confirmDelete()}
         onCancel={cancelDelete}
+      />
+
+      <GiftDetailModal gift={detailGift} visible={detailGift !== null} onClose={() => setDetailGift(null)} onChat={(g) => { setDetailGift(null); setChatGift(g); }} />
+
+      <SuggestionChatModal
+        gift={chatGift}
+        visible={chatGift !== null}
+        friendId={friendId}
+        occasionDetails={occasionDetails}
+        onClose={() => setChatGift(null)}
+        onFinalized={(updated) => {
+          setGifts((prev) => (prev ?? []).map((g) => (g.giftID === updated.giftID ? updated : g)));
+          setChatGift(null);
+        }}
       />
     </View>
   );
@@ -939,6 +1082,86 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Nunito_700Bold',
   },
+  budgetLabel: {
+    color: '#2D3436',
+    fontSize: 13,
+    fontFamily: 'Nunito_800ExtraBold',
+    marginTop: -4,
+  },
+  budgetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  budgetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+  },
+  budgetChipSelected: {
+    borderColor: '#FF9600',
+    backgroundColor: '#FFF4E6',
+  },
+  budgetChipText: {
+    color: '#717182',
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  budgetChipTextSelected: {
+    color: '#FF9600',
+  },
+  budgetCustomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  budgetCustomPrefix: {
+    color: '#2D3436',
+    fontSize: 16,
+    fontFamily: 'Nunito_900Black',
+  },
+  budgetCustomInput: {
+    flex: 1,
+    minHeight: 44,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    paddingHorizontal: 14,
+    color: '#2D3436',
+    fontSize: 14,
+    fontFamily: 'Nunito_700Bold',
+  },
+  suggestionTypeRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  suggestionTypeChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+  },
+  suggestionTypeChipSelected: {
+    borderColor: '#1CB0F6',
+    backgroundColor: '#E8F6FF',
+  },
+  suggestionTypeChipText: {
+    color: '#717182',
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  suggestionTypeChipTextSelected: {
+    color: '#1CB0F6',
+  },
   giftsList: {
     gap: 12,
     marginTop: 4,
@@ -971,7 +1194,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   giftIconEmoji: {
-    fontSize: 20,
+    fontSize: 24,
+  },
+  giftTypeBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#FFF4E6',
+  },
+  giftTypeBadgeText: {
+    color: '#FF9600',
+    fontSize: 10,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   giftBody: {
     flex: 1,

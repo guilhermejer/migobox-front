@@ -70,7 +70,31 @@ export type AgentResponse = {
 
 export type SuggestionCreateRequest = {
   occasionDetails?: string;
+  suggestionType?: 'gift' | 'outing' | 'mixed';
   reminderID?: string;
+};
+
+export type SuggestionChatRequest = {
+  giftID: string;
+  message: string;
+  friendID?: string;
+  occasionDetails?: string;
+};
+
+export type SuggestionFinalizeRequest = {
+  giftID: string;
+  friendID?: string;
+};
+
+export type SuggestionChatResponse = {
+  assistantMessage?: string;
+  session?: Record<string, unknown>;
+};
+
+export type SuggestionFinalizeResponse = {
+  gift?: domain.Gift;
+  session?: Record<string, unknown>;
+  extractedSuggestion?: Record<string, unknown>;
 };
 
 export type ReminderUpsertRequest = {
@@ -312,6 +336,13 @@ export const apiClient = {
     return requestJson<domain.Profile>(`/friends/${friendId}/profile`);
   },
 
+  updateProfile(friendId: string, body: Partial<domain.Profile> & { friendID: string }) {
+    return requestJson<domain.Profile>(`/friends/${friendId}/profile`, {
+      method: 'PUT',
+      body,
+    });
+  },
+
   listGiftsByFriendId(friendId: string) {
     return requestJson<domain.Gift[]>(`/friends/${friendId}/gifts`);
   },
@@ -324,6 +355,22 @@ export const apiClient = {
 
   createSuggestions(friendId: string, body: SuggestionCreateRequest) {
     return requestJson<Record<string, unknown>>(`/profiles/${friendId}/suggestions`, {
+      method: 'POST',
+      body,
+    });
+  },
+
+  suggestionAgentChat(giftId: string, message: string, friendId?: string, occasionDetails?: string) {
+    const body: SuggestionChatRequest = { giftID: giftId, message, friendID: friendId, occasionDetails };
+    return requestJson<SuggestionChatResponse>('/suggestions/agent/chat', {
+      method: 'POST',
+      body,
+    });
+  },
+
+  suggestionAgentFinalize(giftId: string, friendId?: string) {
+    const body: SuggestionFinalizeRequest = { giftID: giftId, friendID: friendId };
+    return requestJson<SuggestionFinalizeResponse>('/suggestions/agent/finalize', {
       method: 'POST',
       body,
     });

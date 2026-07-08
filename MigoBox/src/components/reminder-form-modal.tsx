@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 
 import { apiClient, ApiError, ReminderUpsertRequest } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
@@ -42,8 +43,6 @@ const RECURRENCE_OPTIONS: { value: domain.ReminderRecurrence; label: string; emo
   { value: 'none', label: 'Único', emoji: '📌' },
   { value: 'yearly', label: 'Anual', emoji: '🔁' },
   { value: 'monthly', label: 'Mensal', emoji: '📆' },
-  { value: 'weekly', label: 'Semanal', emoji: '🗓️' },
-  { value: 'daily', label: 'Diário', emoji: '⏰' },
 ];
 
 function formatDateInput(raw: string) {
@@ -69,6 +68,42 @@ function parseDateToIso(text: string): string | undefined {
   if (!isValid) return undefined;
   return `${year}-${month}-${day}`;
 }
+
+function computeNextYearlyDate(month: number, day: number): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const candidate = new Date(year, month - 1, day);
+  if (candidate < today) candidate.setFullYear(year + 1);
+  const y = candidate.getFullYear();
+  const m = String(candidate.getMonth() + 1).padStart(2, '0');
+  const d = String(candidate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function computeNextMonthlyDate(day: number): string {
+  const today = new Date();
+  const candidate = new Date(today.getFullYear(), today.getMonth(), day);
+  if (candidate < today) candidate.setMonth(candidate.getMonth() + 1);
+  const y = candidate.getFullYear();
+  const m = String(candidate.getMonth() + 1).padStart(2, '0');
+  const d = String(candidate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isBeforeToday(isoDate: string): boolean {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  return target < startOfDay(new Date());
+}
+
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
 
 type ReminderFormModalProps = {
   visible: boolean;
@@ -107,20 +142,43 @@ export function ReminderFormModal({
   const [dateText, setDateText] = useState(
     editing?.triggerAt ? formatDateInput(editing.triggerAt.replace(/-/g, '')) : '',
   );
+  const [yearlyMonth, setYearlyMonth] = useState(
+    editing?.triggerAt && editing.recurrence === 'yearly'
+      ? parseInt(editing.triggerAt.slice(5, 7), 10)
+      : new Date().getMonth() + 1,
+  );
+  const [yearlyDay, setYearlyDay] = useState(
+    editing?.triggerAt && editing.recurrence === 'yearly'
+      ? parseInt(editing.triggerAt.slice(8, 10), 10)
+      : new Date().getDate(),
+  );
+  const [monthlyDay, setMonthlyDay] = useState(
+    editing?.triggerAt && editing.recurrence === 'monthly'
+      ? parseInt(editing.triggerAt.slice(8, 10), 10)
+      : new Date().getDate(),
+  );
   const [message, setMessage] = useState(editing?.message ?? '');
   const [saving, setSaving] = useState(false);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
 
   const isCustom = occasion === 'custom';
   const effectiveType = isCustom ? customType.trim() : occasion;
-  const parsedDate = parseDateToIso(dateText);
-  const canSave = effectiveType.length >= (isCustom ? 2 : 1) && parsedDate !== undefined;
+  const parsedDate = recurrence === 'none'
+    ? parseDateToIso(dateText)
+    : recurrence === 'yearly'
+      ? computeNextYearlyDate(yearlyMonth, yearlyDay)
+      : computeNextMonthlyDate(monthlyDay);
+  const pastDateError = recurrence === 'none' && parsedDate !== undefined && isBeforeToday(parsedDate);
+  const canSave = effectiveType.length >= (isCustom ? 2 : 1) && parsedDate !== undefined && !pastDateError;
 
   const resetForm = () => {
     setOccasion('birthday');
     setCustomType('');
     setRecurrence('none');
     setDateText('');
+    setYearlyMonth(new Date().getMonth() + 1);
+    setYearlyDay(new Date().getDate());
+    setMonthlyDay(new Date().getDate());
     setMessage('');
     setFriendlyError(null);
   };
@@ -235,15 +293,67 @@ export function ReminderFormModal({
             </View>
 
             <Text style={styles.label}>Data {recurrence === 'none' ? '' : '(primeira ocorrência)'}</Text>
-            <TextInput
-              value={dateText}
-              onChangeText={(text) => setDateText(formatDateInput(text))}
-              placeholder="DD/MM/AAAA"
-              placeholderTextColor="#9AA3AD"
-              keyboardType="number-pad"
-              maxLength={10}
-              style={styles.input}
-            />
+
+            {recurrence === 'none' ? (
+              <TextInput
+                value={dateText}
+                onChangeText={(text) => setDateText(formatDateInput(text))}
+                placeholder="DD/MM/AAAA"
+                placeholderTextColor="#9AA3AD"
+                keyboardType="number-pad"
+                maxLength={10}
+                style={styles.input}
+              />
+            ) : recurrence === 'yearly' ? (
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerHalf}>
+                  <Text style={styles.pickerLabel}>Mês</Text>
+                  <View style={styles.pickerWrap}>
+                    <Picker
+                      selectedValue={yearlyMonth}
+                      onValueChange={(val: number) => setYearlyMonth(val)}
+                      style={styles.picker}>
+                      {MONTH_NAMES.map((name, idx) => (
+                        <Picker.Item key={idx + 1} label={name} value={idx + 1} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                <View style={styles.pickerHalf}>
+                  <Text style={styles.pickerLabel}>Dia</Text>
+                  <View style={styles.pickerWrap}>
+                    <Picker
+                      selectedValue={yearlyDay}
+                      onValueChange={(val: number) => setYearlyDay(val)}
+                      style={styles.picker}>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <Picker.Item key={d} label={String(d)} value={d} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerHalf}>
+                  <Text style={styles.pickerLabel}>Dia do mês</Text>
+                  <View style={styles.pickerWrap}>
+                    <Picker
+                      selectedValue={monthlyDay}
+                      onValueChange={(val: number) => setMonthlyDay(val)}
+                      style={styles.picker}>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <Picker.Item key={d} label={String(d)} value={d} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {pastDateError ? (
+              <Text style={styles.error}>A data precisa ser igual ou posterior a hoje.</Text>
+            ) : null}
 
             <Text style={styles.label}>Mensagem (opcional)</Text>
             <TextInput
@@ -405,5 +515,28 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: 20,
     paddingTop: 8,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  pickerHalf: {
+    flex: 1,
+  },
+  pickerLabel: {
+    color: '#2D3436',
+    fontSize: 11,
+    fontFamily: 'Nunito_800ExtraBold',
+    marginBottom: 4,
+  },
+  pickerWrap: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#ECECEC',
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 50,
   },
 });

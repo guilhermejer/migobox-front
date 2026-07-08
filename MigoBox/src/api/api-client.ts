@@ -51,6 +51,16 @@ export type FriendUpsertRequest = {
   userRelation?: string;
 };
 
+export type UserUpsertRequest = {
+  fullName?: string;
+  email?: string;
+  active?: boolean;
+  planId?: string;
+  birthDate?: string;
+  city?: string;
+  suggestionLookaheadDays?: number;
+};
+
 type AgentChatRequest = {
   friendID: string;
   message: string;
@@ -436,6 +446,17 @@ export const apiClient = {
   },
 
   executeSignedProfilePhotoRequest: executeSignedRequest,
+
+  getUserById(userId: string) {
+    return requestJson<domain.User>(`/users/${userId}`);
+  },
+
+  updateUser(userId: string, body: UserUpsertRequest) {
+    return requestJson<domain.User>(`/users/${userId}`, {
+      method: 'POST',
+      body,
+    });
+  },
 };
 
 export type { ApiError };

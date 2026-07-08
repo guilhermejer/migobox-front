@@ -53,8 +53,6 @@ const RECURRENCE_META: Record<domain.ReminderRecurrence, string> = {
   none: 'Único',
   yearly: 'Anual',
   monthly: 'Mensal',
-  weekly: 'Semanal',
-  daily: 'Diário',
 };
 
 function occasionMeta(type?: string): { label: string; emoji: string } {

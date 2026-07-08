@@ -1,7 +1,7 @@
 export namespace domain {
   export type Gender = 'male' | 'female' | 'other';
 
-  export type ReminderRecurrence = 'none' | 'yearly' | 'monthly' | 'weekly' | 'daily';
+  export type ReminderRecurrence = 'none' | 'yearly' | 'monthly';
 
   export interface User {
     active?: boolean;
@@ -11,6 +11,7 @@ export namespace domain {
     fullName?: string;
     planID?: string;
     userID?: string;
+    suggestionLookaheadDays?: number;
   }
 
   export interface Friend {

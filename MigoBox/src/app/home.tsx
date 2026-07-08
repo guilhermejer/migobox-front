@@ -334,8 +334,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => {
-              // TODO(API): Integrar endpoint de configuracoes/preferencias do usuario.
-              Alert.alert('TODO', 'Configuracoes ainda nao foram implementadas na API.');
+              router.push('/settings');
             }}>
             <Ionicons name="settings-outline" size={20} color="#2D3436" />
           </TouchableOpacity>

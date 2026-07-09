@@ -37,9 +37,9 @@ const AVATAR_OPTIONS = [
 ];
 
 const RELATION_OPTIONS = [
-  'Melhor amigo/a', 'Namorado/a', 'Conjuge', 'Irmao/Irma',
-  'Primo/a', 'Colega de trabalho', 'Amigo/a da faculdade',
-  'Amigo/a de infancia', 'Familiar', 'Outro',
+  'Melhor amigo(a)', 'Amigo(a)', 'Namorado(a)', 'Conjuge', 'Irmao(a)',
+  'Primo(a)', 'Colega de trabalho', 'Amigo(a) da faculdade',
+  'Amigo(a) de infancia', 'Familiar', 'Outro',
 ];
 
 const GENDER_OPTIONS: { value: domain.Gender; label: string; emoji: string }[] = [

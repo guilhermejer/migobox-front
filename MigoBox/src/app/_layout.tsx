@@ -36,10 +36,7 @@ export default function RootLayout() {
       <UserProvider>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
-          <Stack.Screen name="home" />
-          <Stack.Screen name="add-friend" />
-          <Stack.Screen name="chat-builder" />
-          <Stack.Screen name="friend-profile" />
+          <Stack.Screen name="(protected)" />
         </Stack>
       </UserProvider>
     </ThemeProvider>

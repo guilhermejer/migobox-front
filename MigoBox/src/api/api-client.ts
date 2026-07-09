@@ -291,6 +291,13 @@ async function executeSignedRequest(
 }
 
 export const apiClient = {
+  authGoogle(idToken: string) {
+    return requestJson<domain.User>('/auth/google', {
+      method: 'POST',
+      body: { idToken },
+    });
+  },
+
   findUserByEmail(email: string) {
     const query = new URLSearchParams({ email });
     return requestJson<domain.User>(`/users/email?${query.toString()}`);

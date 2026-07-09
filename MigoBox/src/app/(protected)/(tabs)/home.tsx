@@ -122,8 +122,35 @@ export default function HomeScreen() {
         apiClient.listRemindersByUserId(userId),
       ]);
 
-      setFriends(loadedFriends);
-      setReminders(loadedReminders);
+      setFriends(loadedFriends ?? []);
+      setReminders(loadedReminders ?? []);
+
+      const safeFriends = loadedFriends ?? [];
+      const photoPromises = safeFriends.map(async (friend) => {
+        if (!friend.friendID) return;
+        try {
+          const signedUrl = await apiClient.requestFriendProfilePhotoGetUrl(friend.friendID);
+          if (signedUrl.url) {
+            setPhotoUrlByFriendId((prev) => ({ ...prev, [friend.friendID!]: signedUrl.url }));
+          }
+        } catch {
+          // No photo or error — use avatar/emoji fallback.
+        }
+      });
+
+      const profilePromises = safeFriends.map(async (friend) => {
+        if (!friend.friendID) return;
+        try {
+          const profile = await apiClient.getFriendProfile(friend.friendID);
+          if (profile) {
+            setProfileByFriendId((prev) => ({ ...prev, [friend.friendID!]: profile }));
+          }
+        } catch {
+          // No profile yet — ok.
+        }
+      });
+
+      await Promise.all([...photoPromises, ...profilePromises]);
     } catch (error) {
       const apiError = error as ApiError;
       if (apiError.status >= 500) {
@@ -140,32 +167,6 @@ export default function HomeScreen() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const friendIds = friends.map((friend) => friend.friendID).filter((id): id is string => !!id);
-
-    if (friendIds.length === 0) return;
-
-    friendIds.forEach(async (friendId) => {
-      try {
-        const [signedUrl, profile] = await Promise.all([
-          apiClient.requestFriendProfilePhotoGetUrl(friendId),
-          apiClient.getFriendProfile(friendId),
-        ]);
-        if (!cancelled) {
-          setPhotoUrlByFriendId((prev) => ({ ...prev, [friendId]: signedUrl.url }));
-          setProfileByFriendId((prev) => ({ ...prev, [friendId]: profile }));
-        }
-      } catch {
-        // Sem foto/perfil cadastrado - mantem fallback do avatar/emoji e progresso 0% de tags.
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [friends]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -189,7 +190,7 @@ export default function HomeScreen() {
     const days = daysUntilBirthday(item.birthDate);
     const age = calcAge(item.birthDate);
     const hasBirthdaySoon = days !== null && days <= 7;
-    const progress = calcProfileProgress(item, item.profile ?? profileByFriendId[item.friendID ?? '']);
+    const progress = calcProfileProgress(item, profileByFriendId[item.friendID ?? '']);
 
     return (
       <TouchableOpacity
@@ -228,7 +229,7 @@ export default function HomeScreen() {
             )}
           </View>
           <Text style={styles.friendRelation}>
-            {item.userRelation ?? 'Amigo/a'}{age ? ` · ${age}` : ''}
+            {item.userRelation ?? 'Amigo/a'}{age ? ` \u00B7 ${age}` : ''}
           </Text>
           <View style={styles.progressRow}>
             <View style={styles.progressTrack}>
@@ -267,8 +268,12 @@ export default function HomeScreen() {
                     style={styles.reminderCard}
                     activeOpacity={0.85}
                     onPress={() => {
-                      // TODO(API): Integrar tela de detalhes do evento/lembrete.
-                      Alert.alert('TODO', 'Detalhes do evento ainda serao implementados.');
+                      if (item.reminder.friendID) {
+                        router.push({
+                          pathname: '/friend-profile' as never,
+                          params: { friendId: item.reminder.friendID, friendName },
+                        } as never);
+                      }
                     }}>
                     <View style={styles.reminderIconWrap}>
                       <Text style={styles.reminderEmoji}>{reminderTypeEmoji(item.reminder.type)}</Text>
@@ -319,43 +324,19 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.greeting}>{welcomeMessage} 👋</Text>
-          <Text style={styles.userName}>Olá, {user?.fullName?.split(' ')[0] ?? 'Migo'}!</Text>
+          <Text style={styles.userName}>Ola, {user?.fullName?.split(' ')[0] ?? 'Migo'}!</Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => {
-              // TODO(API): Integrar endpoint/listagem de notificacoes do usuario.
               Alert.alert('TODO', 'Notificacoes ainda nao foram implementadas na API.');
             }}>
             <Ionicons name="notifications-outline" size={20} color="#2D3436" />
             {reminders.length > 0 && <View style={styles.notificationDot} />}
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => {
-              router.push('/settings');
-            }}>
-            <Ionicons name="settings-outline" size={20} color="#2D3436" />
-          </TouchableOpacity>
         </View>
       </View>
-
-      {/* Stats row
-      <View style={styles.statsRow}>
-        {[
-          { label: 'Amigos', value: String(friends.length), emoji: '👥' },
-          // TODO(API): Perfis prontos e Listas ativas precisam de endpoints dedicados.
-          { label: 'Perfis prontos', value: '—', emoji: '✅' },
-          { label: 'Listas ativas', value: '—', emoji: '🎁' },
-        ].map((stat) => (
-          <View key={stat.label} style={styles.statCard}>
-            <Text style={styles.statEmoji}>{stat.emoji}</Text>
-            <Text style={styles.statValue}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
-          </View>
-        ))}
-      </View> */}
 
       {/* Scrollable content */}
       <FlatList
@@ -402,25 +383,6 @@ export default function HomeScreen() {
           <Ionicons name="add" size={32} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
-
-      {/* Bottom nav */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => Alert.alert('Migos', 'Voce ja esta na area de Migos.')}>
-          <Ionicons name="gift-outline" size={22} color="#1CB0F6" />
-          <Text style={styles.footerLabelActive}>Migos</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.footerItem}
-          onPress={() => {
-            // TODO(API): Integrar endpoint de datas especiais e aniversarios.
-            Alert.alert('TODO', 'Sessao Datas ainda sera implementada.');
-          }}>
-          <Ionicons name="calendar-outline" size={22} color="#7A868E" />
-          <Text style={styles.footerLabel}>Datas</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -452,23 +414,6 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 8, right: 8,
     width: 10, height: 10, borderRadius: 5,
     backgroundColor: '#FF9600', borderWidth: 2, borderColor: '#FFFFFF',
-  },
-
-  // Stats
-  statsRow: {
-    flexDirection: 'row', gap: 10,
-    paddingHorizontal: 20, paddingVertical: 12,
-    backgroundColor: '#FFFFFF', borderBottomWidth: 2, borderBottomColor: '#ECECEC',
-  },
-  statCard: {
-    flex: 1, alignItems: 'center', paddingVertical: 8,
-    backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 2, borderColor: '#ECECEC',
-  },
-  statEmoji: { fontSize: 18 },
-  statValue: { color: '#2D3436', fontSize: 16, fontFamily: 'Nunito_800ExtraBold' },
-  statLabel: {
-    color: '#717182', fontSize: 10, fontFamily: 'Nunito_700Bold',
-    textAlign: 'center', paddingHorizontal: 4,
   },
 
   // List
@@ -602,16 +547,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1CB0F6',
     alignItems: 'center', justifyContent: 'center',
   },
-
-  // Footer
-  footer: {
-    backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#ECECEC',
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly',
-    paddingTop: 10, paddingBottom: 20,
-  },
-  footerItem: { alignItems: 'center', gap: 4, minWidth: 70, paddingVertical: 4 },
-  footerLabelActive: { color: '#1CB0F6', fontSize: 12, fontFamily: 'Nunito_800ExtraBold' },
-  footerLabel: { color: '#7A868E', fontSize: 12, fontFamily: 'Nunito_700Bold' },
 
   // Error
   errorText: { color: '#D64545', marginBottom: 12, textAlign: 'center', fontFamily: 'Nunito_700Bold' },

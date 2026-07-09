@@ -39,6 +39,12 @@
         {
           "photosPermission": "O app precisa acessar suas fotos para enviar a imagem de perfil do amigo."
         }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.1089864800789-2laibjuusvddntqpp71rnfaiqq94njdg"
+        }
       ]
     ],
     "experiments": {

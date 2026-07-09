@@ -1,3 +1,4 @@
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -6,6 +7,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiClient, ApiError } from '@/api/api-client';
 import { ChunkyButton } from '@/components/chunky-button';
 import { useUserContext } from '@/context/user-context';
+
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+
+if (GOOGLE_CLIENT_ID) {
+  GoogleSignin.configure({ webClientId: GOOGLE_CLIENT_ID });
+}
 
 const WELCOME_VARIATIONS = [
   'Olha so quem esta de volta!',
@@ -56,6 +63,54 @@ export default function HomeScreen() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setFriendlyError(null);
+    setLoading(true);
+
+    try {
+      await GoogleSignin.hasPlayServices();
+      const signInResult = await GoogleSignin.signIn();
+      const idToken = signInResult.data?.idToken;
+
+      if (!idToken) {
+        setFriendlyError('Nao foi possivel obter o token de autenticacao.');
+        return;
+      }
+
+      const user = await apiClient.authGoogle(idToken);
+
+      if (!user.userID) {
+        setFriendlyError('Nao foi possivel criar sua conta.');
+        return;
+      }
+
+      const randomIndex = Math.floor(Math.random() * WELCOME_VARIATIONS.length);
+      setWelcomeMessage(WELCOME_VARIATIONS[randomIndex]);
+      setUser(user);
+      router.replace('/home' as never);
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'code' in error) {
+        const errCode = (error as { code: string }).code;
+        console.error('Google Sign-In error:', errCode, error);
+        if (errCode === statusCodes.SIGN_IN_CANCELLED) {
+          setFriendlyError(null);
+          return;
+        }
+        if (errCode === statusCodes.IN_PROGRESS) {
+          setFriendlyError('Autenticacao ja esta em andamento.');
+          return;
+        }
+        if (errCode === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+          setFriendlyError('Google Play Services nao esta disponivel.');
+          return;
+        }
+      }
+      setFriendlyError('Nao foi possivel entrar com o Google.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -63,6 +118,21 @@ export default function HomeScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
           <Text style={styles.brand}>MigoBox</Text>
+
+          <ChunkyButton
+            label="Entrar com Google"
+            onPress={handleGoogleSignIn}
+            loading={loading}
+            disabled={loading}
+            color="#4285F4"
+            shadowColor="#357AE8"
+          />
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>ou</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
           <TextInput
             value={email}
@@ -76,7 +146,14 @@ export default function HomeScreen() {
 
           {friendlyError ? <Text style={styles.error}>{friendlyError}</Text> : null}
 
-          <ChunkyButton label="Entrar" onPress={handleSignIn} loading={loading} />
+          <ChunkyButton
+            label="Entrar"
+            onPress={handleSignIn}
+            loading={loading}
+            disabled={loading}
+          />
+
+          <Text style={styles.devHint}>Continuar com e-mail (dev)</Text>
         </View>
       </SafeAreaView>
     </KeyboardAvoidingView>
@@ -101,7 +178,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito_900Black',
     textAlign: 'center',
     color: '#2D3436',
-    marginBottom: 16,
+    marginBottom: 24,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E9EDF2',
+  },
+  dividerText: {
+    color: '#9AA3AD',
+    fontSize: 13,
+    fontFamily: 'Nunito_700Bold',
   },
   input: {
     minHeight: 52,
@@ -119,5 +211,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Nunito_700Bold',
     textAlign: 'center',
+  },
+  devHint: {
+    color: '#9AA3AD',
+    fontSize: 11,
+    fontFamily: 'Nunito_400Regular',
+    textAlign: 'center',
+    marginTop: -8,
   },
 });

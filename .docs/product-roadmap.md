@@ -36,27 +36,22 @@ Público-alvo: jovens de 15 a 35 anos. Tom: lúdico e acolhedor.
 - **Profile embutido não consumido na Home.** O swagger traz `domain.Friend.profile` embutido, mas a Home chama só `listFriendsByUserId` e a barra de progresso fica `0%` (TODO no código). Implementar `calcProfileProgress` a partir do `friend.profile` retornado (likes+dislikes+personality / 12) — igual ao `figma_proto` e ao `friend-profile.tsx`.
 - **Suggestion-agent não implementado no mobile.** `/suggestions/agent/chat` e `/suggestions/agent/finalize` existem no backend e no figma, mas o `api-client` não expõe. Adicionar `suggestionChat(giftId, message)` e `suggestionFinalize(giftId)` + UI de chat de refinement por presente (similar ao chat-builder).
 
-### P1 — automação e confiança
+### P1 — automação e confiança ✅ Done 
 
 - **Sugestões automáticas.** Hoje só sob demanda (botão na tela do amigo). A visão exige geração **automática** atrelada a lembretes/datas.
   - Ideias: job no backend que, ao criar/atualizar um lembrete (ou X dias antes do `triggerAt`), dispare `createSuggestions` com `reminderID` + budget default; app recebe via push/notificação.
   - App: na Home, badge/alerta de "presente pronto para {migo}" e deep-link para o perfil/gift.
   - Requer **notificações** (ver P2) e definir budget default do usuário.
 - **Autenticação/sessão real.** Hoje é só lookup por e-mail, sem persistência/token. Definir JWT/sessão + secure storage; `UserProvider` deixa de ser só em memória.
-- **Vincular sugestão a lembrete.** `SuggestionCreateRequest` já tem `reminderID`, mas a UI não oferece seleção de lembrete (TODO em `friend-profile.tsx`). Adicionar picker de lembrete ao gerar.
+
 
 ### P2 — completude de navegação e conta
 
-- **Navegação 4 tabs** (Caixinha / Descobrir / Datas / Eu) conforme `figma_proto/App.tsx`. Hoje só 2 (Migos/Datas) e ambas stub.
-  - Datas: lista de aniversários e lembretes por período (endpoint a definir/expor).
-  - Descobrir: feed de ideias/passeios sugeridos pelo Migo.
+- **Navegação 3 tabs** (Caixinha / Datas / Eu) conforme `figma_proto/App.tsx`. Hoje só 2 (Migos/Datas) e ambas stub.
+  - Datas: Calendário marcando as datas dos lembretes atuais (Calcular recorrentes (max 5 anos))
   - Eu: perfil do usuário, preferências, budget default, plano.
-- **Stats na Home** (Amigos / Perfis prontos / Listas ativas): hoje comentado. "Perfis prontos" depende de P0 (profile embutido); "Listas ativas" precisa de endpoint de listas.
 - **Notificações e Configurações** (TODO no `api-todos.md`): endpoints de notificações não lidas + preferências.
 - **Detalhe do lembrete** (TODO na Home): rota de detalhe/ação ao tocar num lembrete.
-- **CRUD de lembretes — UI done (create + edit), backend recurrence pending**: PUT `/users/{userId}/reminders` (criar) e POST `/reminders/{reminderId}` (editar) já têm tela no `friend-profile.tsx` via `ReminderFormModal`. Falta o backend suportar `recurrence` (ver seção "Reminders — status & backend spec" abaixo). Falta também **deletar** lembrete (nenhum endpoint DELETE no swagger).
-- **CRUD de amigo**: edição via POST `/friends/{friendId}` (sem tela).
-- **CRUD de presente manual**: PUT `/friends/{friendId}/gifts` e POST `/gifts/{giftId}` (sem tela).
 - **Reset de sessão do agente**: DELETE `/profiles/agent/session/{friendId}` (não chamado — útil para "recomeçar conversa").
 
 ## Recomendações de modelagem (a alinhar com backend)
@@ -80,6 +75,5 @@ Público-alvo: jovens de 15 a 35 anos. Tom: lúdico e acolhedor.
 | Backend — validação de `recurrence` no handler | ✅ Done |
 | Backend — cálculo de próximas ocorrências (expansão de recorrência) | ✅ Done|
 | Backend — migração de schema | ✅ Done|
-| Backend — endpoint DELETE `/reminders/{reminderId}` | ❌ Pending (não está no swagger) |
 
 > Nota: o backend em Go ignora campos desconhecidos por padrão (`json.Unmarshal`), então criar lembretes **pontuais** (`recurrence: "none"` ou omitido) já funciona hoje. O campo `recurrence` só passa a ser persistido/validado após a adaptação abaixo.

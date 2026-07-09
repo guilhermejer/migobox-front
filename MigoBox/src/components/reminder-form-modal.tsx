@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -19,24 +19,24 @@ import { ChunkyButton } from '@/components/chunky-button';
 import { domain } from '@/types/domain';
 
 type OccasionValue =
-  | 'birthday'
-  | 'anniversary'
-  | 'holiday'
-  | 'christmas'
-  | 'valentines'
-  | 'mothers_day'
-  | 'fathers_day'
-  | 'custom';
+  | 'Aniversário'
+  | 'Aniv. de casamento'
+  | 'Data festiva'
+  | 'Natal'
+  | 'Dia dos Namorados'
+  | 'Dia das Mães'
+  | 'Dia dos Pais'
+  | 'Personalizada';
 
 const OCCASION_TYPES: { value: OccasionValue; label: string; emoji: string }[] = [
-  { value: 'birthday', label: 'Aniversário', emoji: '🎂' },
-  { value: 'anniversary', label: 'Aniv. de casamento', emoji: '💍' },
-  { value: 'holiday', label: 'Data festiva', emoji: '🎉' },
-  { value: 'christmas', label: 'Natal', emoji: '🎄' },
-  { value: 'valentines', label: 'Namorados', emoji: '💌' },
-  { value: 'mothers_day', label: 'Dia das Mães', emoji: '🌷' },
-  { value: 'fathers_day', label: 'Dia dos Pais', emoji: '🧔' },
-  { value: 'custom', label: 'Personalizada', emoji: '⭐' },
+  { value: 'Aniversário', label: 'Aniversário', emoji: '🎂' },
+  { value: 'Aniv. de casamento', label: 'Aniv. de casamento', emoji: '💍' },
+  { value: 'Data festiva', label: 'Data festiva', emoji: '🎉' },
+  { value: 'Natal', label: 'Natal', emoji: '🎄' },
+  { value: 'Dia dos Namorados', label: 'Dia dos Namorados', emoji: '💌' },
+  { value: 'Dia das Mães', label: 'Dia das Mães', emoji: '🌷' },
+  { value: 'Dia dos Pais', label: 'Dia dos Pais', emoji: '🧔' },
+  { value: 'Personalizada', label: 'Personalizada', emoji: '⭐' },
 ];
 
 const RECURRENCE_OPTIONS: { value: domain.ReminderRecurrence; label: string; emoji: string }[] = [
@@ -115,6 +115,43 @@ type ReminderFormModalProps = {
   onSaved: (reminder: domain.Reminder) => void;
 };
 
+function buildFormState(editing: domain.Reminder | null | undefined) {
+  const initialOccasion: OccasionValue = (() => {
+    if (!editing?.type) return 'Aniversário';
+    const known = OCCASION_TYPES.find((option) => option.value === editing.type);
+    return known ? (known.value as OccasionValue) : 'Personalizada';
+  })();
+
+  return {
+    occasion: initialOccasion,
+    customType:
+      editing?.type && !OCCASION_TYPES.some((option) => option.value === editing.type)
+        ? editing.type
+        : '',
+    recurrence: editing?.recurrence ?? 'none',
+    dateText: editing?.triggerAt
+      ? (() => {
+          const datePart = editing.triggerAt.split('T')[0];
+          const [y, m, d] = datePart.split('-');
+          return `${d}/${m}/${y}`;
+        })()
+      : '',
+    yearlyMonth:
+      editing?.triggerAt && editing.recurrence === 'yearly'
+        ? parseInt(editing.triggerAt.slice(5, 7), 10)
+        : new Date().getMonth() + 1,
+    yearlyDay:
+      editing?.triggerAt && editing.recurrence === 'yearly'
+        ? parseInt(editing.triggerAt.slice(8, 10), 10)
+        : new Date().getDate(),
+    monthlyDay:
+      editing?.triggerAt && editing.recurrence === 'monthly'
+        ? parseInt(editing.triggerAt.slice(8, 10), 10)
+        : new Date().getDate(),
+    message: editing?.message ?? '',
+  };
+}
+
 export function ReminderFormModal({
   visible,
   friendId,
@@ -124,44 +161,34 @@ export function ReminderFormModal({
   onClose,
   onSaved,
 }: ReminderFormModalProps) {
-  const initialOccasion: OccasionValue = (() => {
-    if (!editing?.type) return 'birthday';
-    const known = OCCASION_TYPES.find((option) => option.value === editing.type);
-    return known ? (known.value as OccasionValue) : 'custom';
-  })();
+  const formInitial = useMemo(() => buildFormState(editing), []);
 
-  const [occasion, setOccasion] = useState<OccasionValue>(initialOccasion);
-  const [customType, setCustomType] = useState(
-    editing?.type && !OCCASION_TYPES.some((option) => option.value === editing.type)
-      ? editing.type
-      : '',
-  );
-  const [recurrence, setRecurrence] = useState<domain.ReminderRecurrence>(
-    editing?.recurrence ?? 'none',
-  );
-  const [dateText, setDateText] = useState(
-    editing?.triggerAt ? formatDateInput(editing.triggerAt.replace(/-/g, '')) : '',
-  );
-  const [yearlyMonth, setYearlyMonth] = useState(
-    editing?.triggerAt && editing.recurrence === 'yearly'
-      ? parseInt(editing.triggerAt.slice(5, 7), 10)
-      : new Date().getMonth() + 1,
-  );
-  const [yearlyDay, setYearlyDay] = useState(
-    editing?.triggerAt && editing.recurrence === 'yearly'
-      ? parseInt(editing.triggerAt.slice(8, 10), 10)
-      : new Date().getDate(),
-  );
-  const [monthlyDay, setMonthlyDay] = useState(
-    editing?.triggerAt && editing.recurrence === 'monthly'
-      ? parseInt(editing.triggerAt.slice(8, 10), 10)
-      : new Date().getDate(),
-  );
-  const [message, setMessage] = useState(editing?.message ?? '');
+  const [occasion, setOccasion] = useState<OccasionValue>(formInitial.occasion);
+  const [customType, setCustomType] = useState(formInitial.customType);
+  const [recurrence, setRecurrence] = useState<domain.ReminderRecurrence>(formInitial.recurrence);
+  const [dateText, setDateText] = useState(formInitial.dateText);
+  const [yearlyMonth, setYearlyMonth] = useState(formInitial.yearlyMonth);
+  const [yearlyDay, setYearlyDay] = useState(formInitial.yearlyDay);
+  const [monthlyDay, setMonthlyDay] = useState(formInitial.monthlyDay);
+  const [message, setMessage] = useState(formInitial.message);
   const [saving, setSaving] = useState(false);
   const [friendlyError, setFriendlyError] = useState<string | null>(null);
 
-  const isCustom = occasion === 'custom';
+  useEffect(() => {
+    if (!visible) return;
+    const s = buildFormState(editing);
+    setOccasion(s.occasion);
+    setCustomType(s.customType);
+    setRecurrence(s.recurrence);
+    setDateText(s.dateText);
+    setYearlyMonth(s.yearlyMonth);
+    setYearlyDay(s.yearlyDay);
+    setMonthlyDay(s.monthlyDay);
+    setMessage(s.message);
+    setFriendlyError(null);
+  }, [visible, editing]);
+
+  const isCustom = occasion === 'Personalizada';
   const effectiveType = isCustom ? customType.trim() : occasion;
   const parsedDate = recurrence === 'none'
     ? parseDateToIso(dateText)
@@ -172,7 +199,7 @@ export function ReminderFormModal({
   const canSave = effectiveType.length >= (isCustom ? 2 : 1) && parsedDate !== undefined && !pastDateError;
 
   const resetForm = () => {
-    setOccasion('birthday');
+    setOccasion('Aniversário');
     setCustomType('');
     setRecurrence('none');
     setDateText('');
